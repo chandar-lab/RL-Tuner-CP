@@ -30,9 +30,9 @@ import os
 import random
 import urllib
 
-from magenta.models.rl_tuner import note_rnn_loader
-from magenta.models.rl_tuner import rl_tuner_eval_metrics
-from magenta.models.rl_tuner import rl_tuner_ops
+import note_rnn_loader
+import rl_tuner_eval_metrics
+import rl_tuner_ops
 import matplotlib.pyplot as plt
 from note_seq import melodies_lib as mlib
 from note_seq import midi_io
@@ -42,6 +42,7 @@ from six.moves import range  # pylint: disable=redefined-builtin
 from six.moves import reload_module  # pylint: disable=redefined-builtin
 from six.moves import urllib  # pylint: disable=redefined-builtin
 import tensorflow.compat.v1 as tf
+from tqdm import tqdm
 
 # Note values of special actions.
 NOTE_OFF = 0
@@ -551,7 +552,7 @@ class RLTuner(object):
     self.reset_composition()
     last_observation = self.prime_internal_models()
 
-    for i in range(num_steps):
+    for i in tqdm(range(num_steps)):
       # Experiencing observation, state, action, reward, new observation,
       # new state tuples, and storing them.
       state = np.array(self.q_network.state_value).flatten()
@@ -580,7 +581,7 @@ class RLTuner(object):
       if i > 0 and i % self.output_every_nth == 0:
         tf.logging.info('Evaluating model...')
         self.evaluate_model()
-        self.save_model(self.algorithm)
+        #self.save_model(self.algorithm)
 
         if self.algorithm == 'g':
           self.rewards_batched.append(
@@ -593,7 +594,7 @@ class RLTuner(object):
 
         # Save a checkpoint.
         save_step = len(self.rewards_batched)*self.output_every_nth
-        self.saver.save(self.session, self.save_path, global_step=save_step)
+        #self.saver.save(self.session, self.save_path, global_step=save_step)
 
         r = self.reward_last_n
         tf.logging.info('Training iteration %s', i)

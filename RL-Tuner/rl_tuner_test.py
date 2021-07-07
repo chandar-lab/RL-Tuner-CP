@@ -21,8 +21,8 @@ import os
 import os.path
 import tempfile
 
-from magenta.models.rl_tuner import note_rnn_loader
-from magenta.models.rl_tuner import rl_tuner
+import note_rnn_loader
+import rl_tuner
 import matplotlib
 import matplotlib.pyplot as plt  # pylint: disable=unused-import
 import tensorflow.compat.v1 as tf
