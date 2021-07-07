@@ -11,16 +11,18 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.engine.constraints;
 
 import minicp.engine.core.AbstractConstraint;
 import minicp.engine.core.IntVar;
-import minicp.util.exception.InconsistencyException;
 import minicp.util.exception.NotImplementedException;
+import minicp.util.*;
 
-import java.util.Arrays;
 import java.util.BitSet;
 
 import static minicp.cp.Factory.minus;
@@ -33,14 +35,16 @@ import static minicp.cp.Factory.minus;
  */
 public class TableCT extends AbstractConstraint {
     private IntVar[] x; //variables
+    private int xLength;
     private int[][] table; //the table
+    private int tableLength;
+    private int[] ofs; //offsets for each variable's domain
     //supports[i][v] is the set of tuples supported by x[i]=v
     private BitSet[][] supports;
-
+    private double[] tupleWeight;
+    //supportedTuples is the set of tuples supported by the current domains of the variables
     private BitSet supportedTuples;
-    private BitSet tmpSupport;
-
-    private int[] dom; // domain iterator
+    private BitSet supporti;
 
     /**
      * Table constraint.
@@ -58,69 +62,141 @@ public class TableCT extends AbstractConstraint {
      * @param table the possible set of solutions for x.
      *              The second dimension must be of the same size as the array x.
      */
-    public TableCT(IntVar[] x, int[][] table) {
-        super(x[0].getSolver());
-        this.x = new IntVar[x.length];
+    public TableCT(IntVar[] x, int[][] table, int tableLength) {
+        super(x);
+	setName("TableCT");
+        this.x = x;
+	this.xLength = x.length;
         this.table = table;
-        dom = new int[Arrays.stream(x).map(var -> var.size()).max(Integer::compare).get()];
+	this.tableLength = tableLength;
+    	setExactWCounting(true);
+	ofs = new int[xLength];
+	tupleWeight = new double[tableLength];
+	supportedTuples = new BitSet(tableLength);
+	supporti = new BitSet(tableLength);
 
         // Allocate supportedByVarVal
-        supports = new BitSet[x.length][];
-        for (int i = 0; i < x.length; i++) {
-            this.x[i] = minus(x[i], x[i].min()); // map the variables domain to start at 0
+        supports = new BitSet[xLength][];
+        for (int i = 0; i < xLength; i++) {
+	    ofs[i] = x[i].min(); // offsets map the variables' domain to start at 0 for supports[][]
             supports[i] = new BitSet[x[i].max() - x[i].min() + 1];
             for (int j = 0; j < supports[i].length; j++)
                 supports[i][j] = new BitSet();
         }
 
         // Set values in supportedByVarVal, which contains all the tuples supported by each var-val pair
-        for (int t = 0; t < table.length; t++) { //i is the index of the tuple (in table)
-            for (int i = 0; i < x.length; i++) { //j is the index of the current variable (in x)
-                if (x[i].contains(table[t][i])) {
-                    supports[i][table[t][i] - x[i].min()].set(t);
+         for (int i = 0; i < tableLength; i++) { //i is the index of the tuple (in table)
+            for (int j = 0; j < xLength; j++) { //j is the index of the current variable (in x)
+                if (x[j].contains(table[i][j])) {
+                    supports[j][table[i][j] - ofs[j]].set(i);
                 }
             }
         }
-
-        supportedTuples = new BitSet(table.length);
-        tmpSupport = new BitSet(table.length);
     }
 
     @Override
     public void post() {
-        for (IntVar var : x)
-            var.propagateOnDomainChange(this);
+	switch(getSolver().getMode()) {
+	case BP:
+	    break; 
+	case SP:
+	case SBP:
+	    for (IntVar var : x)
+		var.propagateOnDomainChange(this);
+	}
         propagate();
     }
-
-
 
     @Override
     public void propagate() {
 
-
-        // Bit-set of tuple indices all set to 1
-        supportedTuples.set(0, table.length);
-
-        // TODO 1: compute supportedTuples as
+        // Compute supportedTuples as
         // supportedTuples = (supports[0][x[0].min()] | ... | supports[0][x[0].max()] ) & ... &
         //                   (supports[x.length][x[0].min()] | ... | supports[x.length][x[0].max()] )
         //
-
-         // This should be displayed instead of the actual code
-
-        // TODO 2
-        for (int i = 0; i < x.length; i++) {
-            int nVal = x[i].fillArray(dom);
-            for (int v = 0; v < nVal; v++) {
-                    // TODO 2 the condition for removing the setValue dom[v] from x[i] is to check if
-                    // there is no intersection between supportedTuples and the support[i][dom[v]]
-                     throw new NotImplementedException();
-
+        supportedTuples.set(0, tableLength); // set them all to true
+        for (int i = 0; i < xLength; i++) {
+	    supporti.clear(); // set them all to false
+	    int s = x[i].fillArray(domainValues);
+	    for (int j = 0; j < s; j++) {
+		supporti.or(supports[i][domainValues[j]-ofs[i]]);
             }
+            supportedTuples.and(supporti);
         }
 
-
-        //throw new NotImplementedException("TableCT");
+        for (int i = 0; i < xLength; i++) {
+	    int s = x[i].fillArray(domainValues);
+	    for (int j = 0; j < s; j++) {
+		// The condition for removing the setValue v from x[i] is to check if
+		// there is no intersection between supportedTuples and the support[i][v]
+		int v = domainValues[j];
+		if (!supports[i][v-ofs[i]].intersects(supportedTuples)) {
+		    x[i].remove(v);
+		}
+            }
+        }
     }
+
+    @Override
+    public void updateBelief(){
+
+        // Compute supportedTuples as
+        // supportedTuples = (supports[0][x[0].min()] | ... | supports[0][x[0].max()] ) & ... &
+        //                   (supports[x.length][x[0].min()] | ... | supports[x.length][x[0].max()] )
+        //
+        supportedTuples.set(0, tableLength); // set them all to true
+        for (int i = 0; i < xLength; i++) {
+	    supporti.clear(); // set them all to false
+	    int s = x[i].fillArray(domainValues);
+	    for (int j = 0; j < s; j++) {
+		supporti.or(supports[i][domainValues[j]-ofs[i]]);
+            }
+            supportedTuples.and(supporti);
+        }
+
+	// Each tuple has its own weight given by the product of the outside_belief of its elements.
+	// Compute these products, but only for supported tuples.
+	for (int k = supportedTuples.nextSetBit(0); k >= 0; k = supportedTuples.nextSetBit(k+1)) {
+	    tupleWeight[k] = beliefRep.one();
+	    for (int i = 0; i < xLength; i++) { 
+		tupleWeight[k] = beliefRep.multiply(tupleWeight[k],outsideBelief(i,table[k][i]));
+	    }
+	}
+
+        for (int i = 0; i < xLength; i++) {
+	    int s = x[i].fillArray(domainValues);
+	    for (int j = 0; j < s; j++) {
+		int v = domainValues[j];
+		double belief = beliefRep.zero();
+		double outsideBelief_i_v = outsideBelief(i,v);
+		BitSet support_i_v = supports[i][v-ofs[i]];
+		// Iterate over supports[i][v] /\ supportedTuples, accumulating the weight of tuples.
+		if (!beliefRep.isZero(outsideBelief_i_v)) {
+		    for (int k = support_i_v.nextSetBit(0); k >= 0; k = support_i_v.nextSetBit(k+1)) {
+			if (supportedTuples.get(k)) {
+			    belief = beliefRep.add(belief, beliefRep.divide(tupleWeight[k],outsideBelief_i_v));
+			}
+		    }
+		} else { // special case of null outside belief (avoid division by zero)
+		    for (int k = support_i_v.nextSetBit(0); k >= 0; k = support_i_v.nextSetBit(k+1)) {
+			if (supportedTuples.get(k)) {
+			    double weight = beliefRep.one();
+			    for (int i2 = 0; i2 < i; i2++) { 
+				weight = beliefRep.multiply(weight,outsideBelief(i2,table[k][i2]));
+			    }
+			    for (int i2 = i+1; i2 < xLength; i2++) { 
+				weight = beliefRep.multiply(weight,outsideBelief(i2,table[k][i2]));
+			    }
+			    belief = beliefRep.add(belief, weight);
+			}
+		    }
+		}
+		setLocalBelief(i,v,belief);
+            }
+        }
+    }
+
+    // FOR SIMPLE COUNTING:
+    // the frequency of x[i]=v is given by (supports[i][v] /\ supportedTuples).cardinality()
+
 }

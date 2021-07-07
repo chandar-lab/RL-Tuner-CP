@@ -33,8 +33,8 @@ import static minicp.cp.Factory.*;
 public class MagicSerie {
     public static void main(String[] args) {
 
-        int n = 300;
-        Solver cp = makeSolver(false);
+        int n = 50;
+        Solver cp = makeSolver(true);
 
         IntVar[] s = makeIntVarArray(cp, n, n);
 
@@ -44,7 +44,7 @@ public class MagicSerie {
         }
         cp.post(sum(s, n));
         cp.post(sum(Factory.makeIntVarArray(n, i -> mul(s[i], i)), n));
-        cp.post(sum(makeIntVarArray(n - 1, i -> mul(s[i], i - 1)), 0));
+        //cp.post(sum(makeIntVarArray(0,n-1,i -> mul(s[i],i-1)),0));
 
         long t0 = System.currentTimeMillis();
         DFSearch dfs = makeDfs(cp, () -> {
@@ -54,8 +54,8 @@ public class MagicSerie {
             if (sv == null) return EMPTY;
             else {
                 int v = sv.min();
-                return branch(() -> cp.post(equal(sv, v)),
-                        () -> cp.post(notEqual(sv, v)));
+                return branch(() -> equal(sv, v),
+                        () -> notEqual(sv, v));
             }
         });
 

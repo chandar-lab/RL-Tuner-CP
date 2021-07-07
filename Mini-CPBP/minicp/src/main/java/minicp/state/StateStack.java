@@ -15,7 +15,11 @@
 
 package minicp.state;
 
+import minicp.engine.core.IntVar;
+
+import java.lang.reflect.Array;
 import java.util.ArrayList;
+import java.util.Arrays;
 
 /**
  * Generic Stack that can be saved and restored through
@@ -39,9 +43,7 @@ public class StateStack<E> {
     }
 
     public void push(E elem) {
-        int s = size.value();
-        if (stack.size() > s) stack.set(s, elem);
-        else stack.add(elem);
+        stack.add(size.value(), elem);
         size.increment();
     }
 
@@ -51,5 +53,10 @@ public class StateStack<E> {
 
     public E get(int index) {
         return stack.get(index);
+    }
+
+    public E[] toArray() {
+        return ((E[]) stack.toArray());
+
     }
 }

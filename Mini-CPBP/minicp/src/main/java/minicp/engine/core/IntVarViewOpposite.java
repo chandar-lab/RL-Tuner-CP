@@ -11,12 +11,16 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 
 package minicp.engine.core;
 
 import minicp.util.Procedure;
+import minicp.util.Belief;
 
 /**
  * A view on a variable of type {@code -x}
@@ -24,9 +28,12 @@ import minicp.util.Procedure;
 public class IntVarViewOpposite implements IntVar {
 
     private final IntVar x;
+    private String name;
+    private Belief beliefRep;
 
     public IntVarViewOpposite(IntVar x) {
         this.x = x;
+	beliefRep = x.getSolver().getBeliefRep();
     }
 
     @Override
@@ -119,17 +126,101 @@ public class IntVarViewOpposite implements IntVar {
     }
 
     @Override
+    public int randomValue() {
+	return -x.randomValue();
+    }
+
+    @Override
+    public double marginal(int v) {
+    	return x.marginal(-v);
+    }
+
+    @Override
+    public void setMarginal(int v, double m) {
+    	x.setMarginal(-v,m);
+    }
+
+    @Override
+    public void resetMarginals() {
+	x.resetMarginals();
+    }
+
+    @Override
+    public void normalizeMarginals() {
+	x.normalizeMarginals();
+    }
+
+    @Override
+    public double maxMarginal() {
+	return x.maxMarginal();
+    }
+
+    @Override
+    public int valueWithMaxMarginal() {
+	return -x.valueWithMaxMarginal();
+    }
+
+    @Override
+    public double minMarginal() {
+	return x.minMarginal();
+    }
+
+    @Override
+    public int valueWithMinMarginal() {
+	return -x.valueWithMinMarginal();
+    }
+
+    @Override
+    public double maxMarginalRegret() {
+	return x.maxMarginalRegret();
+    }
+
+    @Override
+    public double sendMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	assert x.marginal(-v)<=beliefRep.one() && x.marginal(-v)>=beliefRep.zero() : "x.marginal(-v) = "+x.marginal(-v) ;
+	return (beliefRep.isZero(b)? x.marginal(-v) : beliefRep.divide(x.marginal(-v),b));
+    }
+
+    @Override
+    public void receiveMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	assert x.marginal(-v)<=beliefRep.one() && x.marginal(-v)>=beliefRep.zero() : "x.marginal(-v) = "+x.marginal(-v) ;
+	x.setMarginal(-v,beliefRep.multiply(x.marginal(-v),b));
+    }
+    
+    @Override
+    public String getName() {
+	if (this.name!=null)
+	    return this.name;
+	else
+	    return x.getName()+"'s view (opposite)";
+    }
+    
+    @Override
+    public void setName(String name) {
+	this.name = name;
+    }
+    
+    @Override
     public String toString() {
         StringBuilder b = new StringBuilder();
         b.append("{");
         for (int i = min(); i <= max() - 1; i++) {
             if (contains((i))) {
                 b.append(i);
-                b.append(',');
+		b.append("  <");
+		b.append(marginal(i));
+		b.append(">, ");
             }
         }
-        if (size() > 0) b.append(max());
-        b.append("}");
+        if (size() > 0) {
+	    b.append(max());
+	    b.append("  <");
+	    b.append(marginal(max()));
+	    b.append(">, ");
+	}
+	b.append("}");
         return b.toString();
     }
 }

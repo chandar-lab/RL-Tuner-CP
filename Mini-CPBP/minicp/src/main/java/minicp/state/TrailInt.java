@@ -21,10 +21,64 @@ package minicp.state;
  * @see Trailer
  * @see StateManager#makeStateInt(int)
  */
-public class TrailInt extends Trail<Integer> implements StateInt {
+public class TrailInt implements StateInt {
+    class StateEntryInt implements StateEntry {
+        private final int v;
 
-    protected TrailInt(Trailer trail, int initial) {
-        super(trail, initial);
+        StateEntryInt(int v) {
+            this.v = v;
+        }
+
+        @Override
+        public void restore() {
+            TrailInt.this.v = v;
+        }
     }
 
+    private Trailer trail;
+    private int v;
+    private long lastMagic = -1L;
+
+    protected TrailInt(Trailer trail, int initial) {
+        this.trail = trail;
+        v = initial;
+        lastMagic = trail.getMagic() - 1;
+    }
+
+    private void trail() {
+        long trailMagic = trail.getMagic();
+        if (lastMagic != trailMagic) {
+            lastMagic = trailMagic;
+            trail.pushState(new StateEntryInt(v));
+        }
+    }
+
+    @Override
+    public int setValue(int v) {
+        if (v != this.v) {
+            trail();
+            this.v = v;
+        }
+        return this.v;
+    }
+
+    @Override
+    public int increment() {
+        return setValue(value() + 1);
+    }
+
+    @Override
+    public int decrement() {
+        return setValue(value() - 1);
+    }
+
+    @Override
+    public int value() {
+        return this.v;
+    }
+
+    @Override
+    public String toString() {
+        return "" + v;
+    }
 }

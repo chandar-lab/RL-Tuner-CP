@@ -11,6 +11,9 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.cp;
@@ -18,15 +21,17 @@ package minicp.cp;
 import minicp.engine.constraints.*;
 import minicp.engine.core.*;
 import minicp.search.DFSearch;
+import minicp.search.LDSearch;
 import minicp.search.Objective;
 import minicp.state.Copier;
 import minicp.state.Trailer;
 import minicp.util.exception.InconsistencyException;
 import minicp.util.Procedure;
-import minicp.util.exception.IntOverFlowException;
 
 import java.util.Arrays;
 import java.util.Set;
+import java.util.List;
+import java.util.ArrayList;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.stream.IntStream;
@@ -197,7 +202,60 @@ public final class Factory {
      * @see BranchingScheme#branch(Procedure...)
      */
     public static DFSearch makeDfs(Solver cp, Supplier<Procedure[]> branching) {
+        switch(cp.getMode()) { // initial propagation at root node
+            case SP:
+                cp.fixPoint();
+                break;
+            case BP:
+                cp.beliefPropa();
+                break;
+            case SBP:
+                cp.fixPoint();
+                cp.beliefPropa();
+                break;
+        }
         return new DFSearch(cp.getStateManager(), branching);
+    }
+
+    /**
+     * Creates a Limited Discrepancy Search with custom branching heuristic
+     * @param cp the solver that will be used for the search
+     * @param branching a generator that is called at each node of the search
+     *                 tree to generate an array of {@link Procedure} objects
+     *                 that will be used to commit to child nodes.
+     *                 It should return {@link BranchingScheme#EMPTY} whenever the current state
+     *                  is a solution.
+     * @param geometric to indicate whether the progression of maxDiscrepancy is geometric
+     *
+     * @return the limited discrepancy search object ready to execute with
+     *         {@link DFSearch#solve()} or
+     *         {@link DFSearch#optimize(Objective)}
+     *         using the given branching scheme
+     * @see BranchingScheme#firstFail(IntVar...)
+     * @see BranchingScheme#branch(Procedure...)
+     */
+    public static LDSearch makeLds(Solver cp, Supplier<Procedure[]> branching, boolean geometric) {
+	switch(cp.getMode()) { // initial propagation at root node
+	case SP: 
+	    cp.fixPoint();
+	    break;
+	case BP: 
+	    cp.beliefPropa();
+	    break;
+	case SBP: 
+	    cp.fixPoint();
+	    cp.beliefPropa();
+	    break;
+	}
+	// compute an upper bound on the number of discrepancies in the rightmost branch of a complete search tree
+	int discrepancyUB = 0;
+	for (int i = 0; i < cp.getVariables().size(); i++) {
+	    discrepancyUB += cp.getVariables().get(i).size()-1; 
+	}
+        return new LDSearch(cp.getStateManager(), branching, geometric, discrepancyUB);
+    }
+    public static LDSearch makeLds(Solver cp, Supplier<Procedure[]> branching) {
+	return makeLds(cp, branching, true);
     }
 
     // -------------- constraints -----------------------
@@ -260,8 +318,8 @@ public final class Factory {
      * @return a variable that represents the absolute value of x
      */
     public static IntVar abs(IntVar x) {
-        IntVar r = makeIntVar(x.getSolver(), 0, x.max());
-        x.getSolver().post(new Absolute(x, r));
+        IntVar r = makeIntVar(x.getSolver(), 0, Math.max(x.max(), -x.min()));
+        x.getSolver().post(new Absolute(x, r, new IntVar[]{x,r}));
         return r;
     }
 
@@ -279,8 +337,23 @@ public final class Factory {
         int min = Arrays.stream(x).mapToInt(IntVar::min).min().getAsInt();
         int max = Arrays.stream(x).mapToInt(IntVar::max).max().getAsInt();
         IntVar y = makeIntVar(cp, min, max);
-        cp.post(new Maximum(x, y));
+        IntVar[] vars = Arrays.copyOf(x,x.length+1);
+ 	    vars[x.length] = y;
+        cp.post(new Maximum(x, y, vars));
         return y;
+    }
+
+    /**
+     * Returns a maximum constraint.
+     *
+     * @param x an array of variables
+     * @param y a variable
+     * @return a constraint so that {@code y = max{x[0],x[1],...,x[n-1]}}
+     */
+    public static Constraint maximum(IntVar[] x, IntVar y) {
+        IntVar[] vars = Arrays.copyOf(x,x.length+1);
+ 	vars[x.length] = y;
+        return new Maximum(x, y, vars);
     }
 
     /**
@@ -298,54 +371,95 @@ public final class Factory {
     }
 
     /**
-     * Returns a constraint imposing that the variable is
-     * equal to some given value.
+     * Forces the variable to be equal to some given value and
+     * performs propagation.
      *
      * @param x the variable to be assigned to v
      * @param v the value that must be assigned to x
-     * @return a constraint so that {@code x = v}
      */
-    public static Constraint equal(IntVar x, int v) {
-        return new AbstractConstraint(x.getSolver()) {
-            @Override
-            public void post() {
-                x.assign(v);
-            }
-        };
+    public static void equal(IntVar x, int v) {
+        x.assign(v);
+	switch(x.getSolver().getMode()) {
+	case BP:
+	    break;
+	case SP:
+	case SBP:
+	    x.getSolver().fixPoint();
+	}
     }
 
     /**
-     * Returns a constraint imposing that the variable less or
-     * equal to some given value.
+     * Branches on x=v and 
+     * performs (belief) propagation.
+     *
+     * @param x the variable to be assigned to v
+     * @param v the value that must be assigned to x
+     */
+    public static void branchEqual(IntVar x, int v) {
+        x.assign(v);
+        propagate(x);
+    }
+
+    /**
+     * Forces the variable to be less or equal to some given value and
+     * performs propagation.
      *
      * @param x the variable that is constrained bo be less or equal to v
      * @param v the value that must be the upper bound on x
-     * @return a constraint so that {@code x <= v}
      */
-    public static Constraint lessOrEqual(IntVar x, int v) {
-        return new AbstractConstraint(x.getSolver()) {
-            @Override
-            public void post() {
-                x.removeAbove(v);
-            }
-        };
+    public static void lessOrEqual(IntVar x, int v) {
+        x.removeAbove(v);
+	switch(x.getSolver().getMode()) {
+	case BP:
+	    break;
+	case SP:
+	case SBP:
+	    x.getSolver().fixPoint();
+	}
     }
 
     /**
-     * Returns a constraint imposing that the variable is different
-     * from some given value.
+     * Forces the variable to be different to some given value and
+     * performs propagation.
      *
      * @param x the variable that is constrained bo be different from v
      * @param v the value that must be different from x
-     * @return a constraint so that {@code x != y}
      */
-    public static Constraint notEqual(IntVar x, int v) {
-        return new AbstractConstraint(x.getSolver()) {
-            @Override
-            public void post() {
-                x.remove(v);
-            }
-        };
+    public static void notEqual(IntVar x, int v) {
+        x.remove(v);
+	switch(x.getSolver().getMode()) {
+	case BP:
+	    break;
+	case SP:
+	case SBP:
+	    x.getSolver().fixPoint();
+	}
+    }
+
+    /**
+     * Branches on x!=v and
+     * performs (belief) propagation.
+     *
+     * @param x the variable that is constrained bo be different from v
+     * @param v the value that must be different from x
+     */
+    static void branchNotEqual(IntVar x, int v) {
+        x.remove(v);
+        propagate(x);
+    }
+
+    public static void propagate(IntVar x) {
+        switch(x.getSolver().getMode()) {
+            case BP:
+                x.getSolver().beliefPropa();
+                break;
+            case SP:
+                x.getSolver().fixPoint();
+                break;
+            case SBP:
+                x.getSolver().fixPoint();
+                x.getSolver().beliefPropa();
+        }
     }
 
     /**
@@ -357,20 +471,7 @@ public final class Factory {
      * @return a constraint so that {@code x != y}
      */
     public static Constraint notEqual(IntVar x, IntVar y) {
-        return new NotEqual(x, y);
-    }
-
-
-    /**
-     * Returns a constraint imposing that the two different variables
-     * must take the value.
-     *
-     * @param x a variable
-     * @param y a variable
-     * @return a constraint so that {@code x = y}
-     */
-    public static Constraint equal(IntVar x, IntVar y) {
-        return new Equal(x, y);
+        return new NotEqual(x, y, new IntVar[]{x,y});
     }
 
     /**
@@ -384,7 +485,7 @@ public final class Factory {
      * @return a constraint so that {@code x != y+c}
      */
     public static Constraint notEqual(IntVar x, IntVar y, int c) {
-        return new NotEqual(x, y, c);
+        return new NotEqual(x, y, c, new IntVar[]{x,y});
     }
 
     /**
@@ -402,7 +503,7 @@ public final class Factory {
         BoolVar b = makeBoolVar(x.getSolver());
         Solver cp = x.getSolver();
         try {
-            cp.post(new IsEqual(b, x, c));
+            cp.post(new IsEqual(b, x, c, new IntVar[]{x,b}));
         } catch (InconsistencyException e) {
             e.printStackTrace();
         }
@@ -423,7 +524,7 @@ public final class Factory {
     public static BoolVar isLessOrEqual(IntVar x, final int c) {
         BoolVar b = makeBoolVar(x.getSolver());
         Solver cp = x.getSolver();
-        cp.post(new IsLessOrEqual(b, x, c));
+        cp.post(new IsLessOrEqual(b, x, c, new IntVar[]{x,b}));
         return b;
     }
 
@@ -481,7 +582,7 @@ public final class Factory {
      * @return a constraint so that {@code x <= y}
      */
     public static Constraint lessOrEqual(IntVar x, IntVar y) {
-        return new LessOrEqual(x, y);
+        return new LessOrEqual(x, y, new IntVar[]{x,y});
     }
 
     /**
@@ -493,7 +594,7 @@ public final class Factory {
      * @return a constraint so that {@code x >= y}
      */
     public static Constraint largerOrEqual(IntVar x, IntVar y) {
-        return new LessOrEqual(y, x);
+        return new LessOrEqual(y, x, new IntVar[]{y,x});
     }
 
     /**
@@ -510,7 +611,7 @@ public final class Factory {
     public static IntVar element(int[] array, IntVar y) {
         Solver cp = y.getSolver();
         IntVar z = makeIntVar(cp, IntStream.of(array).min().getAsInt(), IntStream.of(array).max().getAsInt());
-        cp.post(new Element1D(array, y, z));
+        cp.post(new Element1D(array, y, z, new IntVar[]{y,z}));
         return z;
     }
 
@@ -536,7 +637,7 @@ public final class Factory {
             }
         }
         IntVar z = makeIntVar(x.getSolver(), min, max);
-        x.getSolver().post(new Element2D(matrix, x, y, z));
+        x.getSolver().post(new Element2D(matrix, x, y, z, new IntVar[]{x,y,z}));
         return z;
     }
 
@@ -550,19 +651,68 @@ public final class Factory {
      * @return a variable equal to {@code x[0]+x[1]+...+x[n-1]}
      */
     public static IntVar sum(IntVar... x) {
-        long sumMin = 0;
-        long sumMax = 0;
+        int sumMin = 0;
+        int sumMax = 0;
         for (int i = 0; i < x.length; i++) {
             sumMin += x[i].min();
             sumMax += x[i].max();
         }
-        if (sumMin < (long) Integer.MIN_VALUE || sumMax > (long) Integer.MAX_VALUE) {
-            throw new IntOverFlowException("domains are too large for sum constraint and would exceed Integer bounds");
+        Solver cp = x[0].getSolver();
+	// merge repeated variables among x (so that beliefs are computed correctly)
+	int nbUnique = 0;
+	int[] nbOcc = new int[x.length];
+	for (int i = 0; i < x.length; i++)
+	    nbOcc[i] = 1;
+	for (int i = 0; i < x.length; i++)
+	    if (nbOcc[i] == 1) {
+		nbUnique++;
+		for (int j = i+1; j < x.length; j++)
+		    if (x[i] == x[j]) { // repeated var
+			nbOcc[i]++;
+			nbOcc[j] = 0;
+		    }
+	    }
+        IntVar[] vars = new IntVar[nbUnique + 1];
+        for (int i = 0; i < x.length; i++) 
+	    switch (nbOcc[i]) {
+	    case 0: break;
+	    case 1: vars[nbUnique] = x[i];
+		    nbUnique--;
+		    break;
+	    default: vars[nbUnique] = mul(x[i],nbOcc[i]);
+		     nbUnique--;
+	    }
+        vars[0] = makeIntVar(cp, -sumMax, -sumMin);
+        cp.post(new Sum(vars));
+        return minus(vars[0]);
+    }
+
+    /**
+     * Returns a variable representing
+     * the weighted sum of a given set of variables.
+     * This relation is enforced by the {@link Sum} constraint
+     * posted by calling this method.
+     *
+     * @param c an array of integer coefficients
+     * @param x an array of variables
+     * @return a variable equal to {@code c[0]*x[0]+c[1]*x[1]+...+c[n-1]*x[n-1]}
+     */
+    public static IntVar sum(int[] c, IntVar... x) {
+	assert(c.length == x.length);
+        int sumMin = 0;
+        int sumMax = 0;
+        for (int i = 0; i < x.length; i++) {
+            sumMin += c[i]*x[i].min();
+            sumMax += c[i]*x[i].max();
         }
         Solver cp = x[0].getSolver();
-        IntVar s = makeIntVar(cp, (int) sumMin, (int) sumMax);
-        cp.post(new Sum(x, s));
-        return s;
+        IntVar[] vars = new IntVar[x.length + 1];
+        for (int i = 0; i < x.length; i++) {
+            vars[i] = mul(x[i],c[i]);
+        }
+        vars[x.length] = makeIntVar(cp, -sumMax, -sumMin);
+        cp.post(new Sum(vars));
+        return minus(vars[x.length]);
     }
 
     /**
@@ -573,7 +723,26 @@ public final class Factory {
      * @return a constraint so that {@code y = x[0]+x[1]+...+x[n-1]}
      */
     public static Constraint sum(IntVar[] x, IntVar y) {
-        return new Sum(x, y);
+        IntVar[] vars = Arrays.copyOf(x, x.length + 1);
+        vars[x.length] = minus(y);
+        return new Sum(vars);
+    }
+
+    /**
+     * Returns a weighted sum constraint.
+     *
+     * @param c an array of integer coefficients
+     * @param x an array of variables
+     * @param y a variable
+     * @return a constraint so that {@code y = c[0]*x[0]+c[1]*x[1]+...+c[n-1]*x[n-1]}
+     */
+    public static Constraint sum(int[] c, IntVar[] x, IntVar y) {
+        IntVar[] vars = new IntVar[x.length + 1];
+        for (int i = 0; i < x.length; i++) {
+            vars[i] = mul(x[i],c[i]);
+        }
+        vars[x.length] = minus(y);
+        return new Sum(vars);
     }
 
     /**
@@ -584,20 +753,71 @@ public final class Factory {
      * @return a constraint so that {@code y = x[0]+x[1]+...+x[n-1]}
      */
     public static Constraint sum(IntVar[] x, int y) {
-        return new Sum(x, y);
+        Solver cp = x[0].getSolver();
+	// merge repeated variables among x
+	int nbUnique = 0;
+	int[] nbOcc = new int[x.length];
+	for (int i = 0; i < x.length; i++)
+	    nbOcc[i] = 1;
+	for (int i = 0; i < x.length; i++)
+	    if (nbOcc[i] == 1) {
+		nbUnique++;
+		for (int j = i+1; j < x.length; j++)
+		    if (x[i] == x[j]) { // repeated var
+			nbOcc[i]++;
+			nbOcc[j] = 0;
+		    }
+	    }
+        IntVar[] vars = new IntVar[nbUnique + 1];
+        for (int i = 0; i < x.length; i++) 
+	    switch (nbOcc[i]) {
+	    case 0: break;
+	    case 1: vars[nbUnique] = x[i];
+		    nbUnique--;
+		    break;
+	    default: vars[nbUnique] = mul(x[i],nbOcc[i]);
+		     nbUnique--;
+	    }
+        vars[0] = makeIntVar(cp, -y, -y);
+        return new Sum(vars);
     }
 
     /**
-     * Returns a sum constraint.
-     * <p>
-     * Uses a _parameter pack_ to automatically bundle a list of IntVar as an array
+     * Returns a weighted sum constraint.
      *
-     * @param y the target value for the sum (a constant)
-     * @param x a parameter pack of IntVar representing an array of variables
-     * @return a constraint so that {@code y = x[0] + ... + x[n-1]}
+     * @param c an array of integer coefficients
+     * @param x an array of variables
+     * @param y a constant
+     * @return a constraint so that {@code y = c[0]*x[0]+c[1]*x[1]+...+c[n-1]*x[n-1]}
      */
-    public static Constraint sum(int y, IntVar... x) {
-        return new Sum(x, y);
+    public static Constraint sum(int[] c, IntVar[] x, int y) {
+        Solver cp = x[0].getSolver();
+	// merge repeated variables among x
+	int nbUnique = 0;
+	int[] coef = new int[x.length];
+	for (int i = 0; i < x.length; i++)
+	    coef[i] = c[i];
+	for (int i = 0; i < x.length; i++)
+	    if (coef[i] != 0) {
+		nbUnique++;
+		for (int j = i+1; j < x.length; j++)
+		    if (x[i] == x[j]) { // repeated var
+			coef[i] += coef[j];
+			coef[j] = 0;
+		    }
+	    }
+        IntVar[] vars = new IntVar[nbUnique + 1];
+        for (int i = 0; i < x.length; i++) 
+	    switch (coef[i]) {
+	    case 0: break;
+	    case 1: vars[nbUnique] = x[i];
+		    nbUnique--;
+		    break;
+	    default: vars[nbUnique] = mul(x[i],coef[i]);
+		     nbUnique--;
+	    }
+        vars[0] = makeIntVar(cp, -y, -y);
+        return new Sum(vars);
     }
 
     /**
@@ -618,6 +838,325 @@ public final class Factory {
      * @return a constraint so that {@code x[i] != x[j] for all i < j}
      */
     public static Constraint allDifferentAC(IntVar[] x) {
-        return new AllDifferentDC(x);
+        return new AllDifferentAC(x);
     }
+
+    /**
+     * Returns a table constraint.
+     * This relation is enforced by the {@link TableCT} constraint
+     * posted by calling this method.
+     *
+     * <p>The table constraint ensures that
+     * {@code x} is a row from the given table.
+     * More exactly, there exist some row <i>i</i>
+     * such that
+     * {@code x[0]==table[i][0], x[1]==table[i][1], etc}.
+     *
+     * <p>This constraint is sometimes called <i>in extension</i> constraint
+     * as the user enumerates the set of solutions that can be taken
+     * by the variables.
+     *
+     * @param x  the non empty set of variables to constraint
+     * @param table the possible set of solutions for x.
+     *              The second dimension must be of the same size as the array x.
+     * @return a table constraint
+     */
+    public static Constraint table(IntVar[] x, int[][] table) {
+        return new TableCT(x,table,table.length);
+    }
+    /**
+     * special case using only the first "tableLength" tuples
+     */
+    public static Constraint table(IntVar[] x, int[][] table, int tableLength) {
+        return new TableCT(x,table,tableLength);
+    }
+    
+    /**
+     * Returns a regular constraint.
+     * This relation is enforced by the {@link Regular} constraint
+     * posted by calling this method.
+     *
+     * @param x an array of variables
+     * @param A a 2D array giving the transition function of the automaton: {states} x {domain values} -> {states} (domain values are nonnegative and start at 0)
+     * @param s is the initial state
+     * @param f a list of accepting states
+     * @return a constraint so that {@code x is a word recognized by automaton A}
+     */
+    public static Constraint regular(IntVar[] x, int[][] A, int s, List<Integer> f) {
+        return new Regular(x,A,s,f);
+    }
+    /**
+     * special case with 0 being the initial state
+     */
+    public static Constraint regular(IntVar[] x, int[][] A, List<Integer> f) {
+        return new Regular(x,A,0,f);
+    }
+    /**
+     * special case with 0 being the initial state and all states being accepting
+     */
+    public static Constraint regular(IntVar[] x, int[][] A) {
+	List<Integer> f=new ArrayList<Integer>();
+        for (int i = 0; i < A.length; i++) {
+            f.add(i);
+        }
+        return new Regular(x,A,0,f);
+    }
+
+    /**
+     * Returns a costRegular constraint.
+     * This relation is enforced by the {@link CostRegular} constraint
+     * posted by calling this method.
+     *
+     * @param x an array of variables
+     * @param A a 2D array giving the transition function of the automaton: {states} x {domain values} -> {states} (domain values are nonnegative and start at 0)
+     * @param s is the initial state
+     * @param f a list of accepting states
+     * @param c a 3D array giving integer costs for each combination of variable, state, and domain value (in that order)
+     * @param tc the total cost of word x computed as the sum of the corresponding integer costs from array c
+     *
+     * @return a constraint so that {@code x is a word recognized by automaton A and of total cost tc}
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, int s, List<Integer> f, int[][][]c, IntVar tc) {
+        return new CostRegular(x,A,s,f,c,tc);
+    }
+    /**
+     * special case with 0 being the initial state
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, List<Integer> f, int[][][]c, IntVar tc) {
+        return new CostRegular(x,A,0,f,c,tc);
+    }
+    /**
+     * special case with 0 being the initial state and all states being accepting
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, int[][][]c, IntVar tc) {
+	List<Integer> f=new ArrayList<Integer>();
+        for (int i = 0; i < A.length; i++) {
+            f.add(i);
+        }
+        return new CostRegular(x,A,0,f,c,tc);
+    }
+    /**
+     *
+     * special case with 2D cost matrix: state x domain value
+     *
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, int s, List<Integer> f, int[][]c, IntVar tc) {
+        return new CostRegular(x,A,s,f,c,tc);
+    }
+    /**
+     * special case with 0 being the initial state
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, List<Integer> f, int[][]c, IntVar tc) {
+        return new CostRegular(x,A,0,f,c,tc);
+    }
+    /**
+     * special case with 0 being the initial state and all states being accepting
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, int[][]c, IntVar tc) {
+	List<Integer> f=new ArrayList<Integer>();
+        for (int i = 0; i < A.length; i++) {
+            f.add(i);
+        }
+        return new CostRegular(x,A,0,f,c,tc);
+    }
+    /**
+     *
+     * special case with 1D cost matrix: domain value
+     *
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, int s, List<Integer> f, int[]c, IntVar tc) {
+        return new CostRegular(x,A,s,f,c,tc);
+    }
+    /**
+     * special case with 0 being the initial state
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, List<Integer> f, int[]c, IntVar tc) {
+        return new CostRegular(x,A,0,f,c,tc);
+    }
+    /**
+     * special case with 0 being the initial state and all states being accepting
+     */
+    public static Constraint costRegular(IntVar[] x, int[][] A, int[]c, IntVar tc) {
+	List<Integer> f=new ArrayList<Integer>();
+        for (int i = 0; i < A.length; i++) {
+            f.add(i);
+        }
+        return new CostRegular(x,A,0,f,c,tc);
+    }
+
+    /**
+     * Returns an among constraint.
+     * This relation is enforced by the {@link Among} constraint
+     * posted by calling this method.
+     *
+     * @param x an array of variables whose instantiations belonging to V we count
+     * @param V an array of values whose occurrences in x we count
+     * @param o the variable corresponding to the number of occurrences of values from V in x
+     * @return a constraint so that {@code (x[0] \in V) + (x[1] \in V) + ... + (x[x.length-1] \in V) == o}
+     */
+    public static Constraint among(IntVar[] x, int[] V, IntVar o) {
+        Solver cp = x[0].getSolver();
+        IntVar[] vars = Arrays.copyOf(x,2*x.length);
+        IntVar[] y = new IntVar[x.length]; // indicator variables: (y[i] == 1) iff (x[i] \in V)
+        for (int i = 0; i < y.length; i++) {
+	    y[i] = makeIntVar(cp, 0, 1); 
+	    y[i].setName("y"+"["+i+"]");
+	    vars[x.length+i] = y[i];
+	}
+        return new Among(x, V, o, y, vars);
+    }
+    /**
+     * special cases with fixed (limit on) nb of occurrences
+     */
+    public static Constraint atleast(IntVar[] x, int[] V, int lb) {
+	return among(x, V, makeIntVar(x[0].getSolver(), lb, Math.max(lb,x.length)));
+    }
+    public static Constraint atmost(IntVar[] x, int[] V, int ub) {
+        return among(x, V, makeIntVar(x[0].getSolver(), Math.min(0,ub), ub));
+    }
+    public static Constraint exactly(IntVar[] x, int[] V, int o) {
+        return among(x, V, makeIntVar(x[0].getSolver(), o, o));
+    }
+    /**
+     * special cases with a single value in V
+     */
+    public static Constraint among(IntVar[] x, int v, IntVar o) {
+	return among(x, new int[]{v}, o);
+    }
+    public static Constraint atleast(IntVar[] x, int v, int lb) {
+        return among(x, new int[]{v}, makeIntVar(x[0].getSolver(), lb, Math.max(lb,x.length)));
+    }
+    public static Constraint atmost(IntVar[] x, int v, int ub) {
+        return among(x, new int[]{v}, makeIntVar(x[0].getSolver(), Math.min(0,ub), ub));
+    }
+    public static Constraint exactly(IntVar[] x, int v, int o) {
+        return among(x, new int[]{v}, makeIntVar(x[0].getSolver(), o, o));
+    }
+
+    /**
+     * Returns a cardinality constraint.
+     * This relation is currently enforced by decomposing it into {@link Among} constraints; hence it is not domain consistent
+     *
+     * @param x an array of variables
+     * @param vals an array of values whose occurrences in x we count
+     * @param o an array of variables corresponding to the number of occurrences of vals in x
+     * @return a cardinality constraint
+     */
+    public static Constraint cardinality(IntVar[] x, int[] vals, IntVar[] o) {
+	    assert(vals.length == o.length);
+	    int maxDomainSize = 0;
+        for (int i = 0; i < x.length; i++) {
+	        maxDomainSize = Math.max(maxDomainSize, x[i].size());
+	    }
+        return new Cardinality(x,vals,o,makeIntVar(x[0].getSolver(),1,maxDomainSize));
+    }
+    /**
+     * special case with fixed nb of occurrences
+     */
+    public static Constraint cardinality(IntVar[] x, int[] vals, int[] o) {
+	assert(vals.length == o.length);
+	int maxDomainSize = 0;
+        for (int i = 0; i < x.length; i++) {
+	    maxDomainSize = Math.max(maxDomainSize, x[i].size());
+	}
+        IntVar[] oVar = new IntVar[o.length];
+	Solver cp = x[0].getSolver();
+        for (int i = 0; i < o.length; i++) {
+	    oVar[i] = makeIntVar(cp, o[i], o[i]);
+	}
+        return new Cardinality(x,vals,oVar,makeIntVar(cp,1,maxDomainSize));
+    }
+
+    /**
+     * Returns a sum modulo p constraint.
+     *
+     * @param x an array of variables
+     * @param y a constant
+     * @param p the modulus
+     * @return a constraint so that {@code y = x[0]+x[1]+...+x[n-1] (mod p)}
+     */
+    public static Constraint sumModP(IntVar[] x, int y, int p) {
+        Solver cp = x[0].getSolver();
+	// merge repeated variables among x
+	int nbUnique = 0;
+	int[] nbOcc = new int[x.length];
+	for (int i = 0; i < x.length; i++)
+	    nbOcc[i] = 1;
+	for (int i = 0; i < x.length; i++)
+	    if (nbOcc[i] == 1) {
+		nbUnique++;
+		for (int j = i+1; j < x.length; j++)
+		    if (x[i] == x[j]) { // repeated var
+			nbOcc[i]++;
+			nbOcc[j] = 0;
+		    }
+	    }
+        IntVar[] vars = new IntVar[nbUnique + 1];
+        for (int i = 0; i < x.length; i++) 
+	    switch (nbOcc[i]) {
+	    case 0: break;
+	    case 1: vars[nbUnique] = x[i];
+		    nbUnique--;
+		    break;
+	    default: vars[nbUnique] = mul(x[i],nbOcc[i]);
+		     nbUnique--;
+	    }
+        vars[0] = makeIntVar(cp, -y, -y);
+        return new SumModP(vars,p);
+    }
+
+    /**
+     * Returns a weighted sum modulo p constraint.
+     *
+     * @param c an array of integer coefficients
+     * @param x an array of variables
+     * @param y a constant
+     * @param p the modulus
+     * @return a constraint so that {@code y = c[0]*x[0]+c[1]*x[1]+...+c[n-1]*x[n-1] (mod p)}
+     */
+
+    public static Constraint sumModP(int[] c, IntVar[] x, int y, int p) {
+	assert( c.length == x.length );
+        Solver cp = x[0].getSolver();
+	// merge repeated variables among x
+	int nbUnique = 0;
+	int[] coef = new int[x.length];
+	for (int i = 0; i < x.length; i++)
+	    coef[i] = c[i];
+	for (int i = 0; i < x.length; i++)
+	    if (coef[i] != 0) {
+		nbUnique++;
+		for (int j = i+1; j < x.length; j++)
+		    if (x[i] == x[j]) { // repeated var
+			coef[i] += coef[j];
+			coef[j] = 0;
+		    }
+	    }
+        IntVar[] vars = new IntVar[nbUnique + 1];
+        for (int i = 0; i < x.length; i++) 
+	    switch (coef[i]) {
+	    case 0: break;
+	    case 1: vars[nbUnique] = x[i];
+		    nbUnique--;
+		    break;
+	    default: vars[nbUnique] = mul(x[i],coef[i]);
+		     nbUnique--;
+	    }
+        vars[0] = makeIntVar(cp, -y, -y);
+        return new SumModP(vars,p);
+    }
+
+    /**
+     * Returns a LinEqSystemModP constraint.
+     *
+     * @param A the mxn matrix of coefficients
+     * @param x the column vector of n variables
+     * @param b the column vector of m rhs values
+     * @param p the prime modulus
+     * @return a constraint so that {@code Ax == b (mod p)}.
+     */
+    public static Constraint linEqSystemModP(int[][] A, IntVar[] x, int[] b, int p) {
+        return new LinEqSystemModP(A,x,b,p);
+    }
+
 }

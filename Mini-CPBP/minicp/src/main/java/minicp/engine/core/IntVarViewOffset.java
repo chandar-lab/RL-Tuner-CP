@@ -11,15 +11,16 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 
 package minicp.engine.core;
 
 import minicp.util.Procedure;
-import minicp.util.exception.IntOverFlowException;
-
-import java.security.InvalidParameterException;
+import minicp.util.Belief;
 
 /**
  * A view on a variable of type {@code x+o}
@@ -28,15 +29,13 @@ public class IntVarViewOffset implements IntVar {
 
     private final IntVar x;
     private final int o;
+    private String name;
+    private Belief beliefRep;
 
     public IntVarViewOffset(IntVar x, int offset) { // y = x + o
-        if (0L + x.min() + offset <= (long) Integer.MIN_VALUE)
-            throw new IntOverFlowException("consider applying a smaller offset as the min domain on this view is <= Integer.MIN _VALUE");
-        if (0L + x.max() + offset >= (long) Integer.MAX_VALUE)
-            throw new IntOverFlowException("consider applying a smaller offset as the max domain on this view is >= Integer.MAX _VALUE");
         this.x = x;
         this.o = offset;
-
+	beliefRep = x.getSolver().getBeliefRep();
     }
 
     @Override
@@ -129,16 +128,100 @@ public class IntVarViewOffset implements IntVar {
     }
 
     @Override
+    public int randomValue() {
+	return x.randomValue() + o;
+    }
+
+    @Override
+    public double marginal(int v) {
+    	return x.marginal(v - o);
+    }
+
+    @Override
+    public void setMarginal(int v, double m) {
+    	x.setMarginal(v - o,m);
+    }
+
+    @Override
+    public void resetMarginals() {
+	x.resetMarginals();
+    }
+
+    @Override
+    public void normalizeMarginals() {
+	x.normalizeMarginals();
+    }
+
+    @Override
+    public double maxMarginal() {
+	return x.maxMarginal();
+    }
+
+    @Override
+    public int valueWithMaxMarginal() {
+	return x.valueWithMaxMarginal() + o;
+    }
+
+    @Override
+    public double minMarginal() {
+	return x.minMarginal();
+    }
+
+    @Override
+    public int valueWithMinMarginal() {
+	return x.valueWithMinMarginal() + o;
+    }
+
+    @Override
+    public double maxMarginalRegret() {
+	return x.maxMarginalRegret();
+    }
+
+    @Override
+    public double sendMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	assert x.marginal(v - o)<=beliefRep.one() && x.marginal(v - o)>=beliefRep.zero() : "x.marginal(v - o) = "+x.marginal(v - o) ;
+	return (beliefRep.isZero(b)? x.marginal(v - o) : beliefRep.divide(x.marginal(v - o),b));
+    }
+
+    @Override
+    public void receiveMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	assert x.marginal(v - o)<=beliefRep.one() && x.marginal(v - o)>=beliefRep.zero() : "x.marginal(v - o) = "+x.marginal(v - o) ;
+	x.setMarginal(v - o,beliefRep.multiply(x.marginal(v - o),b));
+    }
+
+    @Override
+    public String getName() {
+	if (this.name!=null)
+	    return this.name;
+	else
+	    return x.getName()+"'s view (offset)";
+    }
+    
+    @Override
+    public void setName(String name) {
+	this.name = name;
+    }
+    
+    @Override
     public String toString() {
         StringBuilder b = new StringBuilder();
         b.append("{");
         for (int i = min(); i <= max() - 1; i++) {
             if (contains((i))) {
                 b.append(i);
-                b.append(',');
+		b.append("  <");
+		b.append(marginal(i));
+		b.append(">, ");
             }
         }
-        if (size() > 0) b.append(max());
+        if (size() > 0) {
+	    b.append(max());
+	    b.append("  <");
+	    b.append(marginal(max()));
+	    b.append(">, ");
+	}
         b.append("}");
         return b.toString();
 

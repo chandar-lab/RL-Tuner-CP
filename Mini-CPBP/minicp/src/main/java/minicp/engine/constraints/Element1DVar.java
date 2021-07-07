@@ -24,16 +24,14 @@ public class Element1DVar extends AbstractConstraint {
     private final IntVar[] array;
     private final IntVar y;
     private final IntVar z;
-
     
 
-    public Element1DVar(IntVar[] array, IntVar y, IntVar z) {
-        super(y.getSolver());
+    public Element1DVar(IntVar[] array, IntVar y, IntVar z, IntVar[] vars) {
+        super(vars);
+	setName("Element1DVar");
         this.array = array;
         this.y = y;
         this.z = z;
-
-        
     }
 
     @Override
@@ -46,7 +44,5 @@ public class Element1DVar extends AbstractConstraint {
          throw new NotImplementedException();
 
     }
-
-    
 
 }

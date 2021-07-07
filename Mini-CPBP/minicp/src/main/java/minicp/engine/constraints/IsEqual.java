@@ -10,7 +10,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
- * Copyright (v)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
  */
 
 package minicp.engine.constraints;
@@ -24,30 +24,32 @@ import minicp.engine.core.IntVar;
  * Reified equality constraint
  * @see minicp.cp.Factory#isEqual(IntVar, int)
  */
-public class IsEqual extends AbstractConstraint { // b <=> x == v
+public class IsEqual extends AbstractConstraint { // b <=> x == c
 
     private final BoolVar b;
     private final IntVar x;
-    private final int v;
+    private final int c;
 
     /**
      * Returns a boolean variable representing
      * whether one variable is equal to the given constant.
      * @param x the variable
-     * @param v the constant
+     * @param c the constant
      * @param b the boolean variable that is set to true
-     *          if and only if x takes the value v
+     *          if and only if x takes the value c
      * @see minicp.cp.Factory#isEqual(IntVar, int)
      */
-    public IsEqual(BoolVar b, IntVar x, int v) {
-        super(b.getSolver());
+    public IsEqual(BoolVar b, IntVar x, int c, IntVar[] vars) {
+        super(vars);
+	setName("IsEqual");
         this.b = b;
         this.x = x;
-        this.v = v;
+        this.c = c;
     }
 
     @Override
     public void post() {
+
         propagate();
         if (isActive()) {
             x.propagateOnDomainChange(this);
@@ -58,12 +60,12 @@ public class IsEqual extends AbstractConstraint { // b <=> x == v
     @Override
     public void propagate() {
         if (b.isTrue()) {
-            x.assign(v);
+            x.assign(c);
             setActive(false);
         } else if (b.isFalse()) {
-            x.remove(v);
+            x.remove(c);
             setActive(false);
-        } else if (!x.contains(v)) {
+        } else if (!x.contains(c)) {
             b.assign(false);
             setActive(false);
         } else if (x.isBound()) {
@@ -71,4 +73,5 @@ public class IsEqual extends AbstractConstraint { // b <=> x == v
             setActive(false);
         }
     }
+
 }

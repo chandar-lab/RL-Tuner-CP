@@ -43,7 +43,7 @@ public class Element2D extends AbstractConstraint {
     private final StateInt up;
     private final ArrayList<Triple> xyz;
 
-    private static final class Triple implements Comparable<Triple> {
+    private final static class Triple implements Comparable<Triple> {
         private final int x, y, z;
 
         private Triple(int x, int y, int z) {
@@ -66,8 +66,9 @@ public class Element2D extends AbstractConstraint {
      * @param y the second dimention index variable
      * @param z the result variable
      */
-    public Element2D(int[][] mat, IntVar x, IntVar y, IntVar z) {
-        super(x.getSolver());
+    public Element2D(int[][] mat, IntVar x, IntVar y, IntVar z, IntVar[] vars) {
+        super(vars);
+	setName("Element2D");
         this.matrix = mat;
         this.x = x;
         this.y = y;
@@ -123,4 +124,5 @@ public class Element2D extends AbstractConstraint {
         low.setValue(l);
         up.setValue(u);
     }
+
 }

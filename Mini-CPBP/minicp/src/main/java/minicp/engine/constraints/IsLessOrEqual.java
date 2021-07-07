@@ -10,7 +10,7 @@
  * You should have received a copy of the GNU Lesser General Public License
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
- * Copyright (v)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
  */
 
 package minicp.engine.constraints;
@@ -23,27 +23,28 @@ import minicp.util.exception.NotImplementedException;
 /**
  * Reified less or equal constraint.
  */
-public class IsLessOrEqual extends AbstractConstraint { // b <=> x <= v
+public class IsLessOrEqual extends AbstractConstraint { // b <=> x <= c
 
     private final BoolVar b;
     private final IntVar x;
-    private final int v;
+    private final int c;
 
     /**
      * Creates a constraint that
      * link a boolean variable representing
      * whether one variable is less or equal to the given constant.
      * @param b a boolean variable that is true if and only if
-     *         x takes a value less or equal to v
+     *         x takes a value less or equal to c
      * @param x the variable
-     * @param v the constant
+     * @param c the constant
      * @see minicp.cp.Factory#isLessOrEqual(IntVar, int)
      */
-    public IsLessOrEqual(BoolVar b, IntVar x, int v) {
-        super(b.getSolver());
+    public IsLessOrEqual(BoolVar b, IntVar x, int c, IntVar[] vars) {
+        super(vars);
+	setName("IsLessOrEqual");
         this.b = b;
         this.x = x;
-        this.v = v;
+        this.c = c;
     }
 
     @Override
@@ -51,4 +52,5 @@ public class IsLessOrEqual extends AbstractConstraint { // b <=> x <= v
         // TODO
          throw new NotImplementedException("IsLessOrEqual");
     }
+
 }

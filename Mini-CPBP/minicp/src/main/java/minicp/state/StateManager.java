@@ -41,6 +41,13 @@ public interface StateManager {
     void restoreState();
 
     /**
+     * Restores the state as it was at level 0 (first saveState)
+     * The level is now -1.
+     * Notice that you'll probably want to saveState after this operation.
+     */
+    void restoreAllState();
+
+    /**
      * Restores the state up the the given level.
      *
      * @param level the level, a non negative number between 0 and {@link #getLevel()}
@@ -65,20 +72,28 @@ public interface StateManager {
     int getLevel();
 
     /**
-     * Creates a Stateful reference (restorable)
-     *
-     * @param initValue the initial setValue
-     * @return a State object wrapping the initValue
-     */
-    <T> State<T> makeStateRef(T initValue);
-
-    /**
      * Creates a Stateful integer (restorable)
      *
      * @param initValue the initial setValue
-     * @return a StateInt object wrapping the initValue
+     * @return a reference to the integer.
      */
     StateInt makeStateInt(int initValue);
+
+    /**
+     * Creates a Stateful boolean (restorable)
+     *
+     * @param initValue the initial setValue
+     * @return a reference to the boolean.
+     */
+    StateBool makeStateBool(boolean initValue);
+
+    /**
+     * Creates a Stateful double (restorable)
+     *
+     * @param initValue the initial setValue
+     * @return a reference to the double.
+     */
+    StateDouble makeStateDouble(double initValue);
 
     /**
      * Creates a Stateful map (restorable)

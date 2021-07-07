@@ -19,7 +19,6 @@ import minicp.engine.core.AbstractConstraint;
 import minicp.engine.core.IntVar;
 import minicp.util.exception.NotImplementedException;
 
-import java.util.Arrays;
 import java.util.BitSet;
 
 import static minicp.cp.Factory.minus;
@@ -33,7 +32,6 @@ public class ShortTableCT extends AbstractConstraint {
     private final int[][] table; //the table
     //supports[i][v] is the set of tuples supported by x[i]=v
     private BitSet[][] supports;
-    private int[] dom; // domain iterator
 
     /**
      * Create a Table constraint with short tuples.
@@ -45,10 +43,10 @@ public class ShortTableCT extends AbstractConstraint {
      * @param star  the {@code *} symbol representing "any" value in the table
      */
     public ShortTableCT(IntVar[] x, int[][] table, int star) {
-        super(x[0].getSolver());
-        this.x = new IntVar[x.length];
+        super(x);
+	setName("ShortTableCT");
+        this.x = x;
         this.table = table;
-        dom = new int[Arrays.stream(x).map(var -> var.size()).max(Integer::compare).get()];
 
         // Allocate supportedByVarVal
         supports = new BitSet[x.length][];
@@ -75,6 +73,6 @@ public class ShortTableCT extends AbstractConstraint {
     public void propagate() {
         // TODO: implement the filtering
          throw new NotImplementedException("ShortTableCT");
-
     }
+
 }

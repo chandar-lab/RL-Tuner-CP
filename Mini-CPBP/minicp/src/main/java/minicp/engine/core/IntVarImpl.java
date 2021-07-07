@@ -11,6 +11,9 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.engine.core;
@@ -19,6 +22,7 @@ import minicp.state.StateStack;
 import minicp.util.Procedure;
 import minicp.util.exception.InconsistencyException;
 import minicp.util.exception.NotImplementedException;
+import minicp.util.Belief;
 
 import java.security.InvalidParameterException;
 import java.util.Set;
@@ -29,7 +33,9 @@ import java.util.Set;
  */
 public class IntVarImpl implements IntVar {
 
+    private String name;
     private Solver cp;
+    private Belief beliefRep;
     private IntDomain domain;
     private StateStack<Constraint> onDomain;
     private StateStack<Constraint> onBind;
@@ -82,16 +88,15 @@ public class IntVarImpl implements IntVar {
      * @param max the maximum value of the domain with {@code max >= min}
      */
     public IntVarImpl(Solver cp, int min, int max) {
-        if (min == Integer.MIN_VALUE || max == Integer.MAX_VALUE) throw new InvalidParameterException("consider reducing the domains, Integer.MIN _VALUE and Integer.MAX_VALUE not allowed");
         if (min > max) throw new InvalidParameterException("at least one setValue in the domain");
         this.cp = cp;
-        domain = new SparseSetDomain(cp.getStateManager(), min, max);
+	beliefRep = cp.getBeliefRep();
+        domain = new SparseSetDomain(cp, min, max);
         onDomain = new StateStack<>(cp.getStateManager());
         onBind = new StateStack<>(cp.getStateManager());
         onBounds = new StateStack<>(cp.getStateManager());
+        cp.registerVar(this);
     }
-
-
 
     /**
      * Creates a variable with a given set of values as initial domain.
@@ -100,7 +105,16 @@ public class IntVarImpl implements IntVar {
      * @param values the initial values in the domain, it must be nonempty
      */
     public IntVarImpl(Solver cp, Set<Integer> values) {
-         throw new NotImplementedException();
+        this(cp, values.stream().min(Integer::compare).get(), values.stream().max(Integer::compare).get());
+        if (values.isEmpty()) throw new InvalidParameterException("at least one setValue in the domain");
+        for (int i = min(); i <= max(); i++) {
+            if (!values.contains(i)) {
+                try {
+                    this.remove(i);
+                } catch (InconsistencyException e) {
+                }
+            }
+        }
     }
 
     @Override
@@ -177,7 +191,7 @@ public class IntVarImpl implements IntVar {
 
     @Override
     public int fillArray(int[] dest) {
-         throw new NotImplementedException();
+	return domain.fillArray(dest);
     }
 
     @Override
@@ -203,5 +217,79 @@ public class IntVarImpl implements IntVar {
     @Override
     public void removeAbove(int v) {
         domain.removeAbove(v, domListener);
+    }
+
+    @Override
+    public int randomValue() {
+	return domain.randomValue();
+    }
+
+    @Override
+    public double marginal(int v) {
+    	return domain.marginal(v);
+    }
+
+    @Override
+    public void setMarginal(int v, double m) {
+    	domain.setMarginal(v,m);
+    }
+
+    @Override
+    public void resetMarginals() {
+	domain.resetMarginals();
+    }
+
+    @Override
+    public void normalizeMarginals() {
+	domain.normalizeMarginals();
+    }
+
+    @Override
+    public double maxMarginal() {
+	return domain.maxMarginal();
+    }
+
+    @Override
+    public int valueWithMaxMarginal() {
+	return domain.valueWithMaxMarginal();
+    }
+
+    @Override
+    public double minMarginal() {
+	return domain.minMarginal();
+    }
+
+    @Override
+    public int valueWithMinMarginal() {
+	return domain.valueWithMinMarginal();
+    }
+
+    @Override
+    public double maxMarginalRegret() {
+	return domain.maxMarginalRegret();
+    }
+
+    @Override
+    public double sendMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	assert domain.marginal(v)<=beliefRep.one() && domain.marginal(v)>=beliefRep.zero() : "domain.marginal(v) = "+domain.marginal(v) ;
+	return (beliefRep.isZero(b)? domain.marginal(v) : beliefRep.divide(domain.marginal(v),b));
+    }
+
+    @Override
+    public void receiveMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	assert domain.marginal(v)<=beliefRep.one() && domain.marginal(v)>=beliefRep.zero() : "domain.marginal(v) = "+domain.marginal(v) ;
+	domain.setMarginal(v,beliefRep.multiply(domain.marginal(v),b));
+    }
+
+    @Override
+    public String getName() {
+	return this.name;
+    }
+    
+    @Override
+    public void setName(String name) {
+	this.name = name;
     }
 }

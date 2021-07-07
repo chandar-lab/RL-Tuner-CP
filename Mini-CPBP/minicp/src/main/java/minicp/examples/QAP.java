@@ -22,12 +22,7 @@ import minicp.search.Objective;
 import minicp.search.SearchStatistics;
 import minicp.util.io.InputReader;
 
-import java.util.ArrayList;
-import java.util.List;
-import java.util.function.Predicate;
-
 import static minicp.cp.BranchingScheme.firstFail;
-import static minicp.cp.BranchingScheme.limitedDiscrepancy;
 import static minicp.cp.Factory.*;
 
 /**
@@ -66,18 +61,7 @@ public class QAP {
         }
 
         // ----- build the model ---
-        solve(n, w, d, true, stats -> false);
-    }
 
-    /**
-     * @param n       size of the problem
-     * @param w       weights
-     * @param d       distances
-     * @param verbose indicates if the solver should indicates on stdout its progression
-     * @param limit   allow to interrupt the solver faster if needed. See dfs.solve().
-     * @return list of solutions encountered
-     */
-    public static List<Integer> solve(int n, int[][] w, int[][] d, boolean verbose, Predicate<SearchStatistics> limit) {
         Solver cp = makeSolver();
         IntVar[] x = makeIntVarArray(cp, n, n);
 
@@ -95,28 +79,13 @@ public class QAP {
         IntVar totCost = sum(weightedDist);
         Objective obj = cp.minimize(totCost);
 
-        /*
-        // TODO: discrepancy search (to be implemented as an exercise)
-        for (int dL = 0; dL < x.length; dL++) {
-            DFSearch dfs = makeDfs(cp, limitedDiscrepancy(firstFail(x), dL));
-            dfs.optimize(obj);
-        }
-        */
-
         DFSearch dfs = makeDfs(cp, firstFail(x));
 
-        ArrayList<Integer> solutions = new ArrayList<>();
-        dfs.onSolution(() -> {
-            solutions.add(totCost.min());
+        dfs.onSolution(() -> System.out.println("objective:" + totCost.min()));
 
-            if (verbose)
-                System.out.println("objective:" + totCost.min());
-        });
+        SearchStatistics stats = dfs.optimize(obj);
 
-        SearchStatistics stats = dfs.optimize(obj, limit);
-        if (verbose)
-            System.out.println(stats);
+        System.out.println(stats);
 
-        return solutions;
     }
 }

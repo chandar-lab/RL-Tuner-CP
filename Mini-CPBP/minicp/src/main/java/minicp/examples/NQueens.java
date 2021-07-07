@@ -20,14 +20,10 @@ import minicp.engine.core.IntVar;
 import minicp.engine.core.Solver;
 import minicp.search.DFSearch;
 import minicp.search.SearchStatistics;
-import minicp.util.Procedure;
 
 import java.util.Arrays;
 
 import static minicp.cp.BranchingScheme.*;
-import static minicp.cp.Factory.minus;
-import static minicp.cp.Factory.notEqual;
-import static minicp.cp.Factory.plus;
 
 /**
  * The N-Queens problem.
@@ -43,37 +39,10 @@ public class NQueens {
         for (int i = 0; i < n; i++)
             for (int j = i + 1; j < n; j++) {
                 cp.post(Factory.notEqual(q[i], q[j]));
-
                 cp.post(Factory.notEqual(q[i], q[j], j - i));
                 cp.post(Factory.notEqual(q[i], q[j], i - j));
-                // alternative modeling using views
-                // cp.post(notEqual(plus(q[i], j - i), q[j]));
-                // cp.post(notEqual(minus(q[i], j - i), q[j]));
-
             }
 
-
-
-        DFSearch search = Factory.makeDfs(cp, () -> {
-            int idx = -1; // index of the first variable that is not bound
-            for (int k = 0; k < q.length; k++)
-                if (q[k].size() > 1) {
-                    idx = k;
-                    break;
-                }
-            if (idx == -1)
-                return new Procedure[0];
-            else {
-                IntVar qi = q[idx];
-                int v = qi.min();
-                Procedure left = () -> cp.post(Factory.equal(qi, v));
-                Procedure right = () -> cp.post(Factory.notEqual(qi, v));
-                return new Procedure[]{left, right};
-            }
-        });
-
-        // a more compact first fail search using selectors is given next
-/*
         DFSearch search = Factory.makeDfs(cp, () -> {
             IntVar qs = selectMin(q,
                     qi -> qi.size() > 1,
@@ -81,11 +50,10 @@ public class NQueens {
             if (qs == null) return EMPTY;
             else {
                 int v = qs.min();
-                return branch(() -> cp.post(Factory.equal(qs, v)),
-                        () -> cp.post(Factory.notEqual(qs, v)));
+                return branch(() -> Factory.equal(qs, v),
+                        () -> Factory.notEqual(qs, v));
             }
-        });*/
-
+        });
 
         search.onSolution(() ->
                 System.out.println("solution:" + Arrays.toString(q))

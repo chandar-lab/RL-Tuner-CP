@@ -11,6 +11,9 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 
@@ -19,7 +22,7 @@ package minicp.engine.core;
 
 import minicp.util.Procedure;
 import minicp.util.exception.InconsistencyException;
-import minicp.util.exception.IntOverFlowException;
+import minicp.util.Belief;
 
 /**
  * A view on a variable of type {@code a*x}
@@ -28,15 +31,14 @@ public class IntVarViewMul implements IntVar {
 
     private final int a;
     private final IntVar x;
+    private String name;
+    private Belief beliefRep;
 
     public IntVarViewMul(IntVar x, int a) {
-        if ((1L + x.min()) * a <= (long) Integer.MIN_VALUE)
-            throw new IntOverFlowException("consider applying a smaller mul cte as the min domain on this view is <= Integer.MIN _VALUE");
-        if ((1L + x.max()) * a >= (long) Integer.MAX_VALUE)
-            throw new IntOverFlowException("consider applying a smaller mul cte as the max domain on this view is >= Integer.MAX _VALUE");
         assert (a > 0);
         this.a = a;
         this.x = x;
+	beliefRep = x.getSolver().getBeliefRep();
     }
 
     @Override
@@ -156,12 +158,113 @@ public class IntVarViewMul implements IntVar {
         for (int i = min(); i <= max() - 1; i++) {
             if (contains((i))) {
                 b.append(i);
-                b.append(',');
+		b.append("  <");
+		b.append(marginal(i));
+		b.append(">, ");
             }
         }
-        if (size() > 0) b.append(max());
+        if (size() > 0) {
+	    b.append(max());
+	    b.append("  <");
+	    b.append(marginal(max()));
+	    b.append(">, ");
+	}
         b.append("}");
         return b.toString();
 
     }
+
+    @Override
+    public int randomValue() {
+	return x.randomValue() * a;
+    }
+
+    @Override
+    public double marginal(int v) {
+	if (v % a == 0) {
+	    return x.marginal(v/a);
+        } else {
+            throw new InconsistencyException();
+        }
+    }
+
+    @Override
+    public void setMarginal(int v, double m) {
+	if (v % a == 0) {
+	    x.setMarginal(v/a, m);
+        } else {
+            throw new InconsistencyException();
+        }
+    }
+
+    @Override
+    public void resetMarginals() {
+	x.resetMarginals();
+    }
+
+    @Override
+    public void normalizeMarginals() {
+	x.normalizeMarginals();
+    }
+
+    @Override
+    public double maxMarginal() {
+	return x.maxMarginal();
+    }
+
+    @Override
+    public int valueWithMaxMarginal() {
+	return x.valueWithMaxMarginal() * a;
+    }
+
+    @Override
+    public double minMarginal() {
+	return x.minMarginal();
+    }
+
+    @Override
+    public int valueWithMinMarginal() {
+	return x.valueWithMinMarginal() * a;
+    }
+
+    @Override
+    public double maxMarginalRegret() {
+	return x.maxMarginalRegret();
+    }
+
+    @Override
+    public double sendMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	if (v % a == 0) {
+	    assert x.marginal(v/a)<=beliefRep.one() && x.marginal(v/a)>=beliefRep.zero() : "x.marginal(v/a) = "+x.marginal(v/a) ;
+	    return (beliefRep.isZero(b)? x.marginal(v/a) : beliefRep.divide(x.marginal(v/a),b));
+        } else {
+            throw new InconsistencyException();
+	}
+    }
+
+    @Override
+    public void receiveMessage(int v, double b) {
+	assert b<=beliefRep.one() && b>=beliefRep.zero() : "b = "+b ;
+	if (v % a == 0) {
+	    assert x.marginal(v/a)<=beliefRep.one() && x.marginal(v/a)>=beliefRep.zero() : "x.marginal(v/a) = "+x.marginal(v/a) ;
+	    x.setMarginal(v/a,beliefRep.multiply(x.marginal(v/a),b));
+        } else {
+            throw new InconsistencyException();
+	}
+    }
+
+    @Override
+    public String getName() {
+	if (this.name!=null)
+	    return this.name;
+	else
+	    return x.getName()+"'s view (mul)";
+    }
+    
+    @Override
+    public void setName(String name) {
+	this.name = name;
+    }
+    
 }

@@ -11,6 +11,9 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.engine.core;
@@ -142,6 +145,68 @@ public interface IntDomain {
     void removeAbove(int v, DomainListener l);
 
     /**
+     * Returns a value in the domain chosen uniformly at random
+     *
+     * @return random value in the domain
+     */
+    int randomValue();
+
+    /**
+     * Returns the marginal of an element from the domain.
+     *
+     * @param v is an element in the domain
+     */
+    double marginal(int v);
+
+    /**
+     * Sets the marginal of an element from the domain.
+     *
+     * @param v is an element in the domain, m is the marginal
+     */
+    void setMarginal(int v, double m);
+
+    /**
+     * Sets the marginals to 1.
+     *
+     */
+    void resetMarginals();
+
+
+    /**
+     * Normalizes the marginals.
+     *
+     */
+    void normalizeMarginals();
+
+    /**
+     * Returns the largest marginal for a value in the domain.
+     *
+     * @return the largest marginal
+     */
+    double maxMarginal();
+
+    /**
+     * Returns the value in the domain that has the largest marginal.
+     *
+     * @return the value with the largest marginal
+     */
+    int valueWithMaxMarginal();
+
+    /**
+     * Returns the smallest marginal for a value in the domain.
+     *
+     * @return the smallest marginal
+     */
+    double minMarginal();
+
+    /**
+     * Returns the value in the domain that has the smallest marginal.
+     *
+     * @return the value with the smallest marginal
+     */
+    int valueWithMinMarginal();
+
+    /**
      * Copies the values of the domain into an array.
      *
      * @param dest an array large enough {@code dest.length >= size()}
@@ -149,6 +214,13 @@ public interface IntDomain {
      *         the values in the domain in an arbitrary order
      */
     int fillArray(int[] dest);
+
+    /**
+     * Returns the largest marginal regret for the domain.
+     *
+     * @return the largest marginal regret
+     */
+    double maxMarginalRegret();
 
     @Override
     String toString();

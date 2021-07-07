@@ -26,16 +26,24 @@ public class LessOrEqual extends AbstractConstraint { // x <= y
     private final IntVar x;
     private final IntVar y;
 
-    public LessOrEqual(IntVar x, IntVar y) {
-        super(x.getSolver());
+    public LessOrEqual(IntVar x, IntVar y, IntVar[] vars) {
+        super(vars);
+	setName("LessOrEqual");
         this.x = x;
         this.y = y;
+   	setExactWCounting(true);
     }
 
     @Override
     public void post() {
-        x.propagateOnBoundChange(this);
-        y.propagateOnBoundChange(this);
+	switch(getSolver().getMode()) {
+	case BP:
+	    break; 
+	case SP:
+	case SBP:
+	    x.propagateOnBoundChange(this);
+	    y.propagateOnBoundChange(this);
+	}
         propagate();
     }
 
@@ -45,5 +53,35 @@ public class LessOrEqual extends AbstractConstraint { // x <= y
         y.removeBelow(x.min());
         if (x.max() <= y.min())
             setActive(false);
+    }
+
+    @Override
+    public void updateBelief() {
+	double belief;
+	int vx, vy;
+	// Treatment of x
+	belief = beliefRep.zero();
+	vy = y.max();
+	for (vx = x.max(); vx >= x.min(); vx--) {
+	    if (x.contains(vx)) {
+		while ((vx <= vy) && (vy >= y.min())) {
+		    belief = beliefRep.add(belief,outsideBelief(1,vy));
+		    do vy--; while ( !y.contains(vy) && (vy >= y.min()));
+		}
+		setLocalBelief(0,vx,belief);
+	    }
+	}
+	// Treatment of y
+	belief = beliefRep.zero();
+	vx = x.min();
+	for (vy = y.min(); vy <= y.max(); vy++) {
+	    if (y.contains(vy)) {
+		while ((vx <= vy) && (vx <= x.max())) {
+		    belief = beliefRep.add(belief,outsideBelief(0,vx));
+		    do vx++; while ( !x.contains(vx) && (vx <= x.max()));
+		}
+		setLocalBelief(1,vy,belief);
+	    }
+	}
     }
 }

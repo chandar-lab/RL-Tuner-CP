@@ -93,17 +93,21 @@ public class Copier implements StateManager {
         restoreStateUntil(level);
     }
 
+    /**
+     * Restores the state as it was at level 0 (first save)
+     * The level is now -1.
+     * Notice that you'll probably want to save after this operation.
+     */
     @Override
-    public void restoreStateUntil(int level) {
-        while (getLevel() > level)
+    public void restoreAllState() {
+        while (!prior.isEmpty())
             restoreState();
     }
 
     @Override
-    public <T> State<T> makeStateRef(T initValue) {
-        Copy r = new Copy(initValue);
-        store.add(r);
-        return r;
+    public void restoreStateUntil(int level) {
+        while (getLevel() > level)
+            restoreState();
     }
 
     @Override
@@ -114,11 +118,23 @@ public class Copier implements StateManager {
     }
 
     @Override
+    public StateBool makeStateBool(boolean initValue) {
+        CopyBool s = new CopyBool(initValue);
+        store.add(s);
+        return s;
+    }
+
+    @Override
+    public StateDouble makeStateDouble(double initValue) {
+        CopyDouble s = new CopyDouble(initValue);
+        store.add(s);
+        return s;
+    }
+
+    @Override
     public StateMap makeStateMap() {
         CopyMap s = new CopyMap<>();
         store.add(s);
         return s;
     }
-
-
 }

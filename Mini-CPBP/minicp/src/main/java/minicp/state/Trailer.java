@@ -37,9 +37,8 @@ public class Trailer implements StateManager {
         }
 
         void restore() {
-            //note that using for on a Stack gives the wrong order.
-            while (!isEmpty())
-                pop().restore();
+            for (StateEntry se : this)
+                se.restore();
         }
     }
 
@@ -104,24 +103,35 @@ public class Trailer implements StateManager {
     }
 
     @Override
+    public void restoreAllState() {
+        while (!prior.isEmpty())
+            restoreState();
+    }
+
+    @Override
     public void restoreStateUntil(int level) {
         while (getLevel() > level)
             restoreState();
     }
 
-    @Override
-    public <T> State<T> makeStateRef(T initValue) {
-        return new Trail<>(this,initValue);
-    }
 
     @Override
     public StateInt makeStateInt(int initValue) {
-        return new TrailInt(this,initValue);
+        return new TrailInt(this, initValue);
+    }
+
+    @Override
+    public StateBool makeStateBool(boolean initValue) {
+        return new TrailBool(this, initValue);
+    }
+
+    @Override
+    public StateDouble makeStateDouble(double initValue) {
+        return new TrailDouble(this, initValue);
     }
 
     @Override
     public StateMap makeStateMap() {
         return new TrailMap(this);
     }
-
 }

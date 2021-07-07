@@ -11,6 +11,9 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.cp;
@@ -20,14 +23,17 @@ import minicp.engine.core.Solver;
 import minicp.search.LimitedDiscrepancyBranching;
 import minicp.search.Sequencer;
 import minicp.util.Procedure;
-import minicp.util.exception.NotImplementedException;
+import minicp.util.Belief;
 
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.function.Supplier;
+import java.util.Random;
 
 import static minicp.cp.Factory.equal;
 import static minicp.cp.Factory.notEqual;
+import static minicp.cp.Factory.branchEqual;
+import static minicp.cp.Factory.branchNotEqual;
 
 /**
  * Factory for search procedures.
@@ -58,6 +64,9 @@ import static minicp.cp.Factory.notEqual;
  */
 public final class BranchingScheme {
 
+    static Random rand = new Random();
+    static int nbTied;
+    static final int precisionForTie = 10000; // 4 decimal places
     private BranchingScheme() {
         throw new UnsupportedOperationException();
     }
@@ -111,16 +120,95 @@ public final class BranchingScheme {
     }
 
     /**
-     * First-Fail strategy.
+     * Minimum selector with randomized tie-breaking.
+     * <p>Example of usage.
+     * <pre>
+     * {@code
+     * IntVar xs = selectMinRandomTieBreak(x,xi -> xi.size() > 1,xi -> xi.size());
+     * }
+     * </pre>
+     *
+     * @param x the array on which the minimum value is searched
+     * @param p the predicate that filters the element eligible for selection
+     * @param f the evaluation function that returns a comparable when applied on an element of x
+     * @param <T> the type of the elements in x, for instance {@link IntVar}
+     * @param <N> the type on which the minimum is computed, for instance {@link Integer}
+     * @return a minimum element in x that satisfies the predicate p, chosen uniformly at random,
+     *         or null if no element satisfies the predicate.
+     */
+    public static <T, N extends Comparable<N>> T selectMinRandomTieBreak(T[] x, Predicate<T> p, Function<T, N> f) {
+	nbTied = 0;
+        T sel = null;
+        for (T xi : x) {
+            if (p.test(xi)) {
+		if (sel == null) {
+		    sel = xi;
+		    nbTied = 1;
+		} 
+		else {
+		    int comparison = f.apply(xi).compareTo(f.apply(sel));
+		    if (comparison < 0) {
+			sel = xi;
+			nbTied = 1;
+		    } 
+		    else if (comparison == 0) {
+			nbTied++;
+			if (rand.nextInt(nbTied) == 0) // with probability 1/nbTied
+			    sel = xi;
+		    }
+		}
+            }
+        }
+        return sel;
+    }
+    
+    /**
+     * Lexicographic strategy.
      * It selects the first variable with a domain larger than one.
-     * Then it creates two branches. The left branch
-     * assigning the variable to its minimum value.
-     * The right branch removing this minimum value from the domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to its minimum value;
+     * the right branch removing this minimum value from the domain.
+     * @param x the variable on which the lexicographic strategy is applied.
+     * @return a lexicographic branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> lexico(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+		    xi -> 1); // any constant value
+            if (xs == null)
+                return EMPTY;
+            else {
+                int v = xs.min();
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v);
+				  branchEqual(xs, v);
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+            }
+        };
+    }
+
+    /**
+     * First-Fail strategy.
+     * It selects the first unbound variable with a smallest domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to its minimum value;
+     * the right branch removing this minimum value from the domain.
      * @param x the variable on which the first fail strategy is applied.
      * @return a first-fail branching strategy
      * @see Factory#makeDfs(Solver, Supplier)
      */
     public static Supplier<Procedure[]> firstFail(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
         return () -> {
             IntVar xs = selectMin(x,
                     xi -> xi.size() > 1,
@@ -129,8 +217,353 @@ public final class BranchingScheme {
                 return EMPTY;
             else {
                 int v = xs.min();
-                return branch(() -> xs.getSolver().post(equal(xs, v)),
-                        () -> xs.getSolver().post(notEqual(xs, v)));
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v);
+				  branchEqual(xs, v);
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+            }
+        };
+    }
+
+    /**
+     * First-Fail strategy + random value selection.
+     * It selects the first unbound variable with a smallest domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to a value in its domain, chosen uniformly at random;
+     * the right branch removing this value from the domain.
+     * @param x the variable on which the first fail strategy is applied.
+     * @return a first-fail/random-value branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> firstFailRandomVal(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+                    xi -> xi.size());
+            if (xs == null)
+                return EMPTY;
+            else {
+                int v = xs.randomValue();
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v);
+				  branchEqual(xs, v);
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+	    }
+	};
+    }
+
+    /**
+     * First-Fail strategy with random tie-breaking + random value selection.
+     * It selects an unbound variable with a smallest domain uniformly at random.
+     * It selects the first variable with a domain larger than one.
+     * Then it creates two branches:
+     * the left branch assigning the variable to a value in its domain, chosen uniformly at random;
+     * the right branch removing this value from the domain.
+     * @param x the variable on which the first fail strategy is applied.
+     * @return a first-fail/random-value branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> firstFailRandomTieBreakRandomVal(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+        return () -> {
+            IntVar xs = selectMinRandomTieBreak(x,
+                    xi -> xi.size() > 1,
+                    xi -> xi.size());
+            if (xs == null)
+                return EMPTY;
+            else {
+                int v = xs.randomValue();
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v+"; nb of ties="+nbTied);
+				  branchEqual(xs, v);
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+	    }
+	};
+    }
+
+    /**
+     * Random variable selection + random value selection.
+     * It selects an unbound variable uniformly at random.
+     * Then it creates two branches:
+     * the left branch assigning the variable to a value in its domain, chosen uniformly at random;
+     * the right branch removing this value from the domain.
+     * @param x the branching variables
+     * @return a random-variable/random-value branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> randomVarRandomVal(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+        return () -> {
+            IntVar xs = selectMinRandomTieBreak(x,
+                    xi -> xi.size() > 1,
+		    xi -> 1); // any constant value
+            if (xs == null)
+                return EMPTY;
+            else {
+                int v = xs.randomValue();
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v+"; nb of ties="+nbTied);
+				  branchEqual(xs, v);
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+	    }
+	};
+    }
+
+    /**
+     * Maximum Marginal Strength strategy.
+     * It selects an unbound variable with the largest marginal strength 
+     * on one of the values in its domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to that value;
+     * the right branch removing this value from the domain.
+     * @param x the variable on which the max marginal strength strategy is applied.
+     * @return maxMarginalStrength branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> maxMarginalStrength(IntVar[] x) {
+		boolean tracing = x[0].getSolver().tracingSearch(); // Printing during search
+		Belief beliefRep = x[0].getSolver().getBeliefRep(); // Belief representation to use (std ou log)
+        return () -> {
+        	// For each cell, we check how far the marginal of the most likely value is from the uniform probability of that value
+			// Basically how far the real marginal is from the expected marginal
+			// We select the variable that has the strongest marginal
+		    IntVar xs = selectMin(x,
+					xi -> xi.size() > 1,
+					xi -> 1.0 / xi.size() - beliefRep.rep2std(xi.maxMarginal()));
+		    if (xs == null)
+                return EMPTY;
+            else {
+				int v = xs.valueWithMaxMarginal();
+				return branch(() -> {
+					// Procedure if choice is to assign a value to a cell
+					if (tracing)
+						System.out.println("### branching on "+xs.getName()+"="+v+"; marginal="+beliefRep.rep2std(xs.maxMarginal())+"; strength="+(beliefRep.rep2std(xs.maxMarginal()) - 1.0 / xs.size()));
+					// Will do belief propagation
+					branchEqual(xs, v);
+				}, () -> {
+					// Procedure if choice is to remove a value from the domain of a cell
+					if (tracing)
+				      	System.out.println("### branching on "+xs.getName()+"!="+v);
+					// Will do belief propagation
+				  	branchNotEqual(xs, v);
+			      }
+			  	);
+            }
+        };
+    }
+
+    /**
+     * Maximum Marginal Strength strategy with random tie breaking.
+     * It selects an unbound variable with the largest marginal strength 
+     * on one of the values in its domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to that value;
+     * the right branch removing this value from the domain.
+     * @param x the variable on which the max marginal strength strategy is applied.
+     * @return maxMarginalStrengthRandomTieBreak branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> maxMarginalStrengthRandomTieBreak(IntVar[] x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+	Belief beliefRep = x[0].getSolver().getBeliefRep();
+       
+        return () -> {
+	    IntVar xs = selectMinRandomTieBreak(x,
+                    xi -> xi.size() > 1,
+		    xi -> Math.floor( precisionForTie*(1.0 / xi.size() - beliefRep.rep2std(xi.maxMarginal())) ) / precisionForTie); // tie = same first few decimal places
+            if (xs == null)
+                return EMPTY;
+            else {
+		int v = xs.valueWithMaxMarginal(); 
+                return branch(
+			      () -> { 
+				  if (tracing)
+ 				      System.out.println("### branching on "+xs.getName()+"="+v+"; marginal="+beliefRep.rep2std(xs.maxMarginal())+"; strength="+(beliefRep.rep2std(xs.maxMarginal()) - 1.0 / xs.size())+"; nb of ties="+nbTied);
+				  branchEqual(xs, v); 
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+            }
+        };
+    }
+
+    /**
+     * Maximum Marginal Regret strategy with random tie breaking.
+     * It selects an unbound variable with the largest marginal regret
+     * on one of the values in its domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to that value;
+     * the right branch removing this value from the domain.
+     * @param x the variable on which the max marginal regret strategy is applied.
+     * @return maxMarginalRegretRandomTieBreak branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> maxMarginalRegretRandomTieBreak(IntVar[] x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+	Belief beliefRep = x[0].getSolver().getBeliefRep();
+       
+        return () -> {
+	    IntVar xs = selectMinRandomTieBreak(x,
+                    xi -> xi.size() > 1,
+		    xi -> Math.floor( precisionForTie*(- beliefRep.rep2std(xi.maxMarginalRegret())) ) / precisionForTie); // tie = same first few decimal places
+            if (xs == null)
+                return EMPTY;
+            else {
+		int v = xs.valueWithMaxMarginal(); 
+                return branch(
+			      () -> { 
+				  if (tracing)
+ 				      System.out.println("### branching on "+xs.getName()+"="+v+"; marginal="+beliefRep.rep2std(xs.maxMarginal())+"; regret="+(beliefRep.rep2std(xs.maxMarginalRegret()))+"; nb of ties="+nbTied);
+				  branchEqual(xs, v); 
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+            }
+        };
+    }
+
+    /**
+     * Minimum Marginal Strength strategy.
+     * It selects an unbound variable with the smallest marginal strength 
+     * on one of the values in its domain.
+     * Then it creates two branches: 
+     * the left branch _removing_ this value from the domain;
+     * the right branch _assigning_ the variable to that value.
+     * @param x the variable on which the min marginal strength strategy is applied.
+     * @return minMarginalStrength branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> minMarginalStrength(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+	Belief beliefRep = x[0].getSolver().getBeliefRep();
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+		    xi -> beliefRep.rep2std(xi.minMarginal()) - 1.0 / xi.size());
+            if (xs == null)
+                return EMPTY;
+            else {
+		int v = xs.valueWithMinMarginal(); 
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v+" marginal="+(1-beliefRep.rep2std(xs.minMarginal())));
+				  branchNotEqual(xs, v);
+			      },
+			      () -> { 
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v);
+				  branchEqual(xs, v); 
+			      } );
+            }
+        };
+    }
+
+    /**
+     * Maximum Marginal strategy.
+     * It selects an unbound variable with the largest marginal
+     * on one of the values in its domain.
+     * Then it creates two branches:
+     * the left branch assigning the variable to that value;
+     * the right branch removing this value from the domain.
+     * @param x the variable on which the max marginal strategy is applied.
+     * @return maxMarginal branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> maxMarginal(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+	Belief beliefRep = x[0].getSolver().getBeliefRep();
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+		    xi -> - beliefRep.rep2std(xi.maxMarginal()));
+            if (xs == null)
+                return EMPTY;
+            else {
+		int v = xs.valueWithMaxMarginal(); 
+                return branch(
+			      () -> { 
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v+" marginal="+beliefRep.rep2std(xs.maxMarginal()));
+				  branchEqual(xs, v); 
+			      },
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v);
+				  branchNotEqual(xs, v);
+			      } );
+            }
+        };
+    }
+
+    /**
+     * Minimum Marginal strategy.
+     * It selects an unbound variable with the smallest marginal
+     * on one of the values in its domain.
+     * Then it creates two branches: 
+     * the left branch _removing_ this value from the domain;
+     * the right branch _assigning_ the variable to that value.
+     * @param x the variable on which the min marginal strategy is applied.
+     * @return minMarginal branching strategy
+     * @see Factory#makeDfs(Solver, Supplier)
+     */
+    public static Supplier<Procedure[]> minMarginal(IntVar... x) {
+	boolean tracing = x[0].getSolver().tracingSearch();
+	Belief beliefRep = x[0].getSolver().getBeliefRep();
+        return () -> {
+            IntVar xs = selectMin(x,
+                    xi -> xi.size() > 1,
+		    xi -> beliefRep.rep2std(xi.minMarginal()));
+            if (xs == null)
+                return EMPTY;
+            else {
+		int v = xs.valueWithMinMarginal(); 
+                return branch(
+			      () -> {
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"!="+v+" marginal="+(1-beliefRep.rep2std(xs.minMarginal())));
+				  branchNotEqual(xs, v);
+			      },
+			      () -> { 
+				  if (tracing)
+				      System.out.println("### branching on "+xs.getName()+"="+v);
+				  branchEqual(xs, v); 
+			      } );
             }
         };
     }
@@ -161,37 +594,4 @@ public final class BranchingScheme {
     public static Supplier<Procedure[]> limitedDiscrepancy(Supplier<Procedure[]> branching, int maxDiscrepancy) {
         return new LimitedDiscrepancyBranching(branching, maxDiscrepancy);
     }
-
-    /**
-     * Last conflict heuristic
-     * Attempts to branch first on the last variable that caused an Inconsistency
-     *
-     * Lecoutre, C., Saïs, L., Tabary, S., & Vidal, V. (2009).
-     * Reasoning from last conflict (s) in constraint programming.
-     * Artificial Intelligence, 173(18), 1592-1614.
-     *
-     * @param variableSelector returns the next variable to bind
-     * @param valueSelector given a variable, returns the value to which
-     *                      it must be assigned on the left branch (and excluded on the right)
-     */
-    public static Supplier<Procedure[]> lastConflict(Supplier<IntVar> variableSelector, Function<IntVar, Integer> valueSelector) {
-        throw new NotImplementedException();
-    }
-
-    /**
-     * Conflict Ordering Search
-     *
-     * Gay, S., Hartert, R., Lecoutre, C., & Schaus, P. (2015).
-     * Conflict ordering search for scheduling problems.
-     * In International conference on principles and practice of constraint programming (pp. 140-148).
-     * Springer.
-     *
-     * @param variableSelector returns the next variable to bind
-     * @param valueSelector given a variable, returns the value to which
-     *                      it must be assigned on the left branch (and excluded on the right)
-     */
-    public static Supplier<Procedure[]> conflictOrderingSearch(Supplier<IntVar> variableSelector, Function<IntVar, Integer> valueSelector) {
-        throw new NotImplementedException();
-    }
-
 }

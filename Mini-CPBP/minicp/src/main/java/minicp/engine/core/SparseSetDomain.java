@@ -11,24 +11,40 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.engine.core;
 
-
+import minicp.engine.core.Solver;
 import minicp.state.StateManager;
-import minicp.state.StateSparseSet;
+import minicp.state.StateSparseWeightedSet;
+import minicp.util.Belief;
 
+import java.util.NoSuchElementException;
+import java.util.Random;
+import java.util.Arrays;
 
 /**
  * Implementation of a domain with a sparse-set
  */
 public class SparseSetDomain implements IntDomain {
-    private StateSparseSet domain;
+    private StateSparseWeightedSet domain;
+    private int[] domainValues; // an array large enough to hold the domain
+    private double[] beliefValues; // an auxiliary array as large as domainValues
+    private Solver cp;
+    private Belief beliefRep;
 
+    static Random rand = new Random();
 
-    public SparseSetDomain(StateManager sm, int min, int max) {
-        domain = new StateSparseSet(sm, max - min + 1, min);
+    public SparseSetDomain(Solver cp, int min, int max) {
+        domain = new StateSparseWeightedSet(cp, max - min + 1, min);
+	domainValues = new int[max - min + 1];
+	beliefValues = new double[max - min + 1];
+	this.cp = cp;
+	beliefRep = cp.getBeliefRep();
     }
 
     @Override
@@ -133,16 +149,139 @@ public class SparseSetDomain implements IntDomain {
     }
 
     @Override
+    public int randomValue() {
+        if (domain.isEmpty())
+            throw new NoSuchElementException();
+	int s = fillArray(domainValues);
+	return domainValues[rand.nextInt(s)];
+    }
+
+    @Override
+    public double marginal(int v) {
+        return domain.weight(v);
+    }
+
+    @Override
+    public void setMarginal(int v, double m) {
+        domain.setWeight(v,m);
+    }
+
+    @Override
+    public void resetMarginals() {
+	int s = fillArray(domainValues);
+	for (int j = 0; j < s; j++) {
+	    setMarginal(domainValues[j],beliefRep.one());
+	}
+    }
+
+    @Override
+    public void normalizeMarginals() {
+
+	int s = fillArray(domainValues);
+	if (s==1) { // corresponding variable is bound
+	    setMarginal(domainValues[0],beliefRep.one());
+	    return;
+	}
+	for (int j = 0; j < s; j++) {
+	    beliefValues[j] = marginal(domainValues[j]);
+	}
+	double normalizingConstant = beliefRep.summation(beliefValues,s);
+	if (beliefRep.isZero(normalizingConstant)) // all marginals are zero (actOnZeroOneBelief set to false?)
+	    return;
+	for (int j = 0; j < s; j++) {
+	    int v = domainValues[j];
+	    setMarginal(v,beliefRep.divide(marginal(v),normalizingConstant));
+	    assert marginal(v)<=beliefRep.one() && marginal(v)>=beliefRep.zero() : "marginal(v) = "+marginal(v) ;
+	}
+    }
+
+    @Override
+    public double maxMarginal() {
+        if (domain.isEmpty())
+            throw new NoSuchElementException();
+    	double max = beliefRep.zero();
+	int s = fillArray(domainValues);
+	for (int j = 0; j < s; j++) {
+	    int v = domainValues[j];
+	    if (marginal(v) > max) {
+		max = marginal(v);
+	    }
+    	}
+    	return max;
+    }
+
+    @Override
+    public int valueWithMaxMarginal() {
+        if (domain.isEmpty())
+            throw new NoSuchElementException();
+	int s = fillArray(domainValues);
+	int valWithMax = domainValues[0];
+    	double max = marginal(valWithMax);
+	for (int j = 1; j < s; j++) {
+	    int v = domainValues[j];
+	    if (marginal(v) > max) {
+		max = marginal(v);
+		valWithMax = v;
+	    }
+    	}
+    	return valWithMax;
+    }
+
+    @Override
+    public double minMarginal() {
+        if (domain.isEmpty())
+            throw new NoSuchElementException();
+    	double min = beliefRep.one();
+	int s = fillArray(domainValues);
+	for (int j = 0; j < s; j++) {
+	    int v = domainValues[j];
+	    if (marginal(v) < min) {
+		min = marginal(v);
+	    }
+    	}
+    	return min;
+    }
+
+    @Override
+    public int valueWithMinMarginal() {
+        if (domain.isEmpty())
+            throw new NoSuchElementException();
+	int s = fillArray(domainValues);
+	int valWithMin = domainValues[0];
+    	double min = marginal(valWithMin);
+	for (int j = 1; j < s; j++) {
+	    int v = domainValues[j];
+	    if (marginal(v) < min) {
+		min = marginal(v);
+		valWithMin = v;
+	    }
+    	}
+    	return valWithMin;
+    }
+
+    @Override
+    public double maxMarginalRegret() {
+        if (domain.isEmpty())
+            throw new NoSuchElementException();
+    	double max = beliefRep.zero();
+    	double nextMax = beliefRep.zero();
+	int s = fillArray(domainValues);
+	for (int j = 0; j < s; j++) {
+	    double m = marginal(domainValues[j]);
+	    if (m > max) {
+		nextMax = max;
+		max = m;
+	    }
+	    else if (m > nextMax) {
+		nextMax = m;
+	    }
+    	}
+    	return max - nextMax;
+    }
+
+    @Override
     public String toString() {
-        if (size() == 0) return "{}";
-        StringBuilder b = new StringBuilder();
-        b.append("{");
-        for (int i = min(); i < max(); i++)
-            if (contains((i)))
-                b.append(i).append(',');
-        b.append(max());
-        b.append("}");
-        return b.toString();
+	return domain.toString();
     }
 
 }

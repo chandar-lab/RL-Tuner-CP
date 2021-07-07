@@ -17,15 +17,18 @@ package minicp.engine.core;
 
 
 import minicp.util.Procedure;
+import minicp.cp.Factory;
 
 public class ConstraintClosure extends AbstractConstraint {
 
 
     private final Procedure filtering;
+    private final Solver cp;
 
     public ConstraintClosure(Solver cp, Procedure filtering) {
-        super(cp);
+        super(Factory.makeIntVarArray(cp,0,0)); // call with an empty array
         this.filtering = filtering;
+	this.cp = cp;
     }
 
     @Override
@@ -37,4 +40,5 @@ public class ConstraintClosure extends AbstractConstraint {
     public void propagate() {
         filtering.call();
     }
+
 }

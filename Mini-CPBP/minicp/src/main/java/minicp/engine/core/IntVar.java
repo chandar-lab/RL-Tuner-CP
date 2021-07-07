@@ -11,6 +11,9 @@
  * along with mini-cp. If not, see http://www.gnu.org/licenses/lgpl-3.0.en.html
  *
  * Copyright (c)  2018. by Laurent Michel, Pierre Schaus, Pascal Van Hentenryck
+ *
+ * mini-cpbp, replacing classic propagation by belief propagation 
+ * Copyright (c)  2019. by Gilles Pesant
  */
 
 package minicp.engine.core;
@@ -161,4 +164,101 @@ public interface IntVar {
      *            is thrown if the domain becomes empty
      */
     void removeAbove(int v);
+
+    /**
+     * Returns a value in the domain chosen uniformly at random.
+     *
+     * @return random value in the domain
+     */
+    int randomValue();
+
+    /**
+     * Returns the marginal of the specified value.
+     *
+     * @param v the value whose marginal is to be returned
+     * @exception InconsistencyException
+     *            is thrown if the value is not in the domain
+     * @return the marginal
+     */
+    double marginal(int v);
+
+    /**
+     * Sets the marginal of the specified value.
+     *
+     * @param v the value whose marginal is to be set to m
+     * @exception InconsistencyException
+     *            is thrown if the value is not in the domain
+     */
+    void setMarginal(int v, double m);
+
+    /**
+     * Sets the marginals to 1.
+     *
+     */
+    void resetMarginals();
+
+    /**
+     * Normalizes the marginals.
+     *
+     */
+    void normalizeMarginals();
+
+    /**
+     * Returns the largest marginal for a value in the domain.
+     *
+     * @return the largest marginal
+     */
+    double maxMarginal();
+
+    /**
+     * Returns the value in the domain that has the largest marginal.
+     *
+     * @return the value with the largest marginal
+     */
+    int valueWithMaxMarginal();
+
+    /**
+     * Returns the smallest marginal for a value in the domain.
+     *
+     * @return the smallest marginal
+     */
+    double minMarginal();
+
+    /**
+     * Returns the value in the domain that has the smallest marginal.
+     *
+     * @return the value with the smallest marginal
+     */
+    int valueWithMinMarginal();
+
+    /**
+     * Returns the largest marginal regret for the domain.
+     *
+     * @return the largest marginal regret
+     */
+    double maxMarginalRegret();
+
+    /**
+     * Returns the marginal of the specified value after cancelling 
+     * out the local belief of a constraint.
+     *
+     * @param v the value, b the local belief
+     * @return the corrected marginal
+     * @exception InconsistencyException
+     *            is thrown if the value is not in the domain
+     */
+    double sendMessage(int v, double b);
+
+    /**
+     * Accumulates in the marginal of the specified value 
+     * the local belief of a constraint.
+     *
+     * @param v the value, b the local belief
+     * @exception InconsistencyException
+     *            is thrown if the value is not in the domain
+     */
+    void receiveMessage(int v, double b);
+
+    public String getName();
+    public void setName(String name);
 }

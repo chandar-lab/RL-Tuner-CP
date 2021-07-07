@@ -20,6 +20,8 @@ import minicp.engine.core.AbstractConstraint;
 import minicp.engine.core.IntVar;
 import minicp.util.exception.NotImplementedException;
 
+import java.util.Arrays;
+
 /**
  * Maximum Constraint
  */
@@ -34,8 +36,9 @@ public class Maximum extends AbstractConstraint {
      * @param x the variable on which the maximum is to be found
      * @param y the variable that is equal to the maximum on x
      */
-    public Maximum(IntVar[] x, IntVar y) {
-        super(x[0].getSolver());
+    public Maximum(IntVar[] x, IntVar y, IntVar[] vars) {
+        super(vars);
+	setName("Maximum");
         assert (x.length > 0);
         this.x = x;
         this.y = y;
@@ -44,13 +47,40 @@ public class Maximum extends AbstractConstraint {
 
     @Override
     public void post() {
-        // TODO
-         throw new NotImplementedException("Maximum");
+        for (IntVar xi : x) {
+            xi.propagateOnBoundChange(this);
+        }
+        y.propagateOnBoundChange(this);
+        propagate();
     }
 
 
     @Override
     public void propagate() {
-         throw new NotImplementedException("Maximum");
+        int max = Integer.MIN_VALUE;
+        int min = Integer.MIN_VALUE;
+        int nSupport = 0;
+        int supportIdx = -1;
+        for (int i = 0; i < x.length; i++) {
+            x[i].removeAbove(y.max());
+
+            if (x[i].max() > max) {
+                max = x[i].max();
+            }
+            if (x[i].min() > min) {
+                min = x[i].min();
+            }
+
+            if (x[i].max() >= y.min()) {
+                nSupport += 1;
+                supportIdx = i;
+            }
+        }
+        if (nSupport == 1) {
+            x[supportIdx].removeBelow(y.min());
+        }
+        y.removeAbove(max);
+        y.removeBelow(min);
     }
+
 }
