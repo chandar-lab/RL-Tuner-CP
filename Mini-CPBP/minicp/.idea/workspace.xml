@@ -2,129 +2,10 @@
 <project version="4">
   <component name="ChangeListManager">
     <list default="true" id="9ee47787-f503-465c-bb60-2e730bd5c28e" name="Default Changelist" comment="">
-      <change beforePath="$PROJECT_DIR$/.idea/vcs.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../.gitignore" beforeDir="false" afterPath="$PROJECT_DIR$/../../.gitignore" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/cp/BranchingScheme.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/cp/BranchingScheme.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/cp/Factory.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/cp/Factory.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Absolute.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Absolute.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/AllDifferentBinary.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/AllDifferentBinary.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/AllDifferentDC.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Circuit.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Circuit.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Cumulative.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Cumulative.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/CumulativeDecomposition.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/CumulativeDecomposition.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Disjunctive.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Disjunctive.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element1D.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element1D.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element1DDomainConsistent.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element1DVar.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element1DVar.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element2D.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Element2D.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Equal.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsEqual.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsEqual.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsLessOrEqual.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsLessOrEqual.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsLessOrEqualVar.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsLessOrEqualVar.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsOr.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/IsOr.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/LessOrEqual.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/LessOrEqual.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Maximum.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Maximum.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/NegTableCT.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/NegTableCT.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/NotEqual.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/NotEqual.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Or.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Or.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/ShortTableCT.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/ShortTableCT.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/ShortTableDecomp.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/ShortTableDecomp.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Sum.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/Sum.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/TableCT.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/TableCT.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/TableDecomp.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/constraints/TableDecomp.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/AbstractConstraint.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/AbstractConstraint.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/Constraint.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/Constraint.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/ConstraintClosure.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/ConstraintClosure.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntDomain.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntDomain.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVar.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVar.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarImpl.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarImpl.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarViewMul.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarViewMul.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarViewOffset.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarViewOffset.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarViewOpposite.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/IntVarViewOpposite.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/MiniCP.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/MiniCP.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/Minimize.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/Minimize.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/Solver.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/Solver.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/engine/core/SparseSetDomain.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/engine/core/SparseSetDomain.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/DARP.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/DialARide.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/Eternity.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/Eternity.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/MagicSerie.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/MagicSerie.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/MagicSeriePaper.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/MagicSquare.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/MagicSquare.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/NQueens.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/NQueens.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/NQueensPaper.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/QAP.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/QAP.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/QAPLNS.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/QAPLNS.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/QAPPaper.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/SMoney.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/StableMatching.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/TSP.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/examples/TSP.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/examples/TSPBoundImpact.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/search/DFSearch.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/search/DFSearch.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/search/LimitedDiscrepancyBranching.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/search/LimitedDiscrepancyBranching.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/search/SearchStatistics.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/search/SearchStatistics.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/Copier.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/Copier.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/Copy.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/CopyInt.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/CopyInt.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/State.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/StateInt.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/StateInt.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/StateManager.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/StateManager.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/StateSparseBitSet.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/StateSparseSet.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/StateSparseSet.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/StateStack.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/StateStack.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/Trail.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/TrailInt.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/TrailInt.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/state/Trailer.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/state/Trailer.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/util/GraphUtil.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/util/GraphUtil.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/util/exception/InconsistencyException.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/util/exception/InconsistencyException.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/main/java/minicp/util/exception/IntOverFlowException.java" beforeDir="false" afterPath="$PROJECT_DIR$/src/main/java/minicp/util/exception/IntOverFlowException.java" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/SolverTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/AbsoluteTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/AllDifferentDCTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/AllDifferentTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/CircuitTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/CumulativeDecompTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/CumulativeTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/DisjunctiveTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/Element1DDCTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/Element1DTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/Element1DVarTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/Element2DTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/EqualTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/IsEqualTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/IsLessOrEqualTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/IsLessOrEqualVarTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/IsOrTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/LessOrEqualTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/MaximizeTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/MaximumMatchingTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/MaximumTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/NegTableTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/NotEqualTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/OrTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/ProfileTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/ShortTableTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/SumTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/TableTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/constraints/ThetaTreeTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/core/DomainTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/core/IntVarTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/core/IntVarViewMulTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/core/IntVarViewOffsetTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/engine/core/MiniCPTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/search/ConflictOrderingSearchTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/search/DFSearchTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/search/LastConflictSearchTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/search/LimitedDiscrepancyBranchingTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/search/SequencerTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/state/StateBoolTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/state/StateIntTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/state/StateManagerTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/state/StateSparseBitSetTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/state/StateSparseSetTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/util/DataPermissionFactory.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/util/GraphUtilTest.java" beforeDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/test/java/minicp/util/NotImplementedExceptionAssume.java" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../RL-Tuner/RL_Tuner.ipynb" beforeDir="false" afterPath="$PROJECT_DIR$/../../RL-Tuner/RL_Tuner.ipynb" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/../../RL-Tuner/rl_tuner.py" beforeDir="false" afterPath="$PROJECT_DIR$/../../RL-Tuner/rl_tuner.py" afterDir="false" />
     </list>
     <option name="EXCLUDED_CONVERTED_TO_IGNORED" value="true" />
     <option name="SHOW_DIALOG" value="false" />
@@ -236,6 +117,7 @@
       <workItem from="1624884815756" duration="1099000" />
       <workItem from="1624968419154" duration="3850000" />
       <workItem from="1625665290576" duration="1199000" />
+      <workItem from="1626115507069" duration="591000" />
     </task>
     <servers />
   </component>

@@ -29,6 +29,7 @@ import collections
 import os
 import random
 import urllib
+import math
 
 import note_rnn_loader
 import rl_tuner_eval_metrics
@@ -65,7 +66,6 @@ class RLTuner(object):
   """Implements a recurrent DQN designed to produce melody sequences."""
 
   def __init__(self, output_dir,
-
                # Hyperparameters
                dqn_hparams=None,
                reward_mode='music_theory_all',
@@ -302,11 +302,21 @@ class RLTuner(object):
         # Double check that the model was initialized from checkpoint properly.
         reward_vars = self.reward_rnn.variables()
         q_vars = self.q_network.variables()
+        target_q_vars = self.target_q_network.variables()
+        reward_vars = reward_vars[:len(target_q_vars)]
 
-        reward1 = self.session.run(reward_vars[0])
-        q1 = self.session.run(q_vars[0])
+        successful = True
+        print(reward_vars)
+        print(target_q_vars)
+        for i in range(len(reward_vars)):
+          reward = self.session.run(reward_vars[i])
+          q = self.session.run(q_vars[i])
+          target_q = self.session.run(target_q_vars[i])
 
-        if np.sum((q1 - reward1)**2) == 0.0:
+          if np.sum((q - reward) ** 2) != 0.0 or np.sum((q - target_q) ** 2) != 0.0:
+            successful = False
+
+        if successful:
           # TODO(natashamjaques): Remove print statement once tf.logging outputs
           # to Jupyter notebooks (once the following issue is resolved:
           # https://github.com/tensorflow/tensorflow/issues/3047)
@@ -884,6 +894,8 @@ class RLTuner(object):
     elif self.reward_mode == 'key':
       # Makes the model play within a key.
       reward = self.reward_key_distribute_prob(action)
+    elif self.reward_mode == 'tonic':
+      reward = self.reward_tonic(action)
     elif self.reward_mode == 'key_and_tonic':
       # Makes the model play within a key, while starting and ending on the
       # tonic note.
@@ -1655,6 +1667,56 @@ class RLTuner(object):
     # reward_preferred_intervals function.
     pass
 
+  def get_music_sequence(self, length=None):
+    if length is None:
+      length = self.num_notes_in_melody
+
+    self.reset_composition()
+    next_obs = self.prime_internal_models()
+    tf.logging.info('Priming with note %s', np.argmax(next_obs))
+
+    lengths = np.full(self.q_network.batch_size, 1, dtype=int)
+
+    generated_seq = [0] * length
+    for i in range(length):
+      input_batch = np.reshape(next_obs, (self.q_network.batch_size, 1,
+                        self.num_actions))
+      if self.algorithm == 'g':
+        (softmax, self.q_network.state_value,
+         self.reward_rnn.state_value) = self.session.run(
+          [self.action_softmax, self.q_network.state_tensor,
+           self.reward_rnn.state_tensor],
+          {self.q_network.melody_sequence: input_batch,
+           self.q_network.initial_state: self.q_network.state_value,
+           self.q_network.lengths: lengths,
+           self.reward_rnn.melody_sequence: input_batch,
+           self.reward_rnn.initial_state: self.reward_rnn.state_value,
+           self.reward_rnn.lengths: lengths})
+      else:
+        softmax, self.q_network.state_value = self.session.run(
+          [self.action_softmax, self.q_network.state_tensor],
+          {self.q_network.melody_sequence: input_batch,
+           self.q_network.initial_state: self.q_network.state_value,
+           self.q_network.lengths: lengths})
+      softmax = np.reshape(softmax, (self.num_actions))
+
+      sample = rl_tuner_ops.sample_softmax(softmax)
+      generated_seq[i] = sample
+      next_obs = np.array(rl_tuner_ops.make_onehot([sample],
+                             self.num_actions)).flatten()
+
+    tf.logging.info('Generated sequence: %s', generated_seq)
+    # TODO(natashamjaques): Remove print statement once tf.logging outputs
+    # to Jupyter notebooks (once the following issue is resolved:
+    # https://github.com/tensorflow/tensorflow/issues/3047)
+    print('Generated sequence:', generated_seq)
+
+    melody = mlib.Melody(rl_tuner_ops.decoder(generated_seq,
+                          self.q_network.transpose_amount))
+
+    sequence = melody.to_sequence(qpm=rl_tuner_ops.DEFAULT_QPM)
+    return sequence
+
   def generate_music_sequence(self, title='rltuner_sample',
                               visualize_probs=False, prob_image_name=None,
                               length=None, most_probable=False):
@@ -1866,7 +1928,7 @@ class RLTuner(object):
 
     reward_batch = self.output_every_nth
     x = [reward_batch * i for i in np.arange(len(self.eval_avg_reward))]
-    start_index = start_at_epoch / self.output_every_nth
+    start_index = math.floor(start_at_epoch / self.output_every_nth)
     plt.figure()
     plt.plot(x[start_index:], self.eval_avg_reward[start_index:])
     plt.plot(x[start_index:], self.eval_avg_music_theory_reward[start_index:])
