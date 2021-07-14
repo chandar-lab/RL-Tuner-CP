@@ -21,8 +21,8 @@ import os
 import os.path
 import tempfile
 
-from magenta.models.rl_tuner import note_rnn_loader
-from magenta.models.rl_tuner import rl_tuner
+import note_rnn_loader
+import rl_tuner
 import matplotlib
 import matplotlib.pyplot as plt  # pylint: disable=unused-import
 import tensorflow.compat.v1 as tf
@@ -68,7 +68,7 @@ class RLTunerTest(tf.test.TestCase):
         self.output_dir, note_rnn_checkpoint_dir=self.checkpoint_dir)
 
     plot_name = 'test_initial_plot.png'
-    rlt.generate_music_sequence(visualize_probs=True,
+    rlt.generate_music_sequence(save_to_file=True, visualize_probs=True,
                                 prob_image_name=plot_name)
     output_path = os.path.join(self.output_dir, plot_name)
     self.assertTrue(os.path.exists(output_path))

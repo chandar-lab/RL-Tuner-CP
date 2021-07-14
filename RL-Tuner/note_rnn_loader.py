@@ -29,7 +29,7 @@ These functions are necessary for use with the RL Tuner class.
 import os
 
 from magenta.common import sequence_example_lib
-from magenta.models.rl_tuner import rl_tuner_ops
+import rl_tuner_ops
 from magenta.models.shared import events_rnn_graph
 from magenta.pipelines import melody_pipelines
 import note_seq
@@ -153,6 +153,12 @@ class NoteRNNLoader(object):
       elif self.note_rnn_type == 'basic_rnn':
         var_dict[inner_name] = var
       else:
+        if inner_name.startswith('rnn'):
+            if inner_name.endswith('bias'):
+                inner_name = "RNN/MultiRNNCell/Cell0/LSTMCell/B"
+            else:
+                inner_name = "RNN/MultiRNNCell/Cell0/LSTMCell/W_0"
+
         var_dict[self.checkpoint_scope + '/' + inner_name] = var
 
     return var_dict

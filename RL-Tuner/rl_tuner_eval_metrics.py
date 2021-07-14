@@ -14,9 +14,10 @@
 
 """Code to evaluate how well an RL Tuner conforms to music theory rules."""
 
-from magenta.models.rl_tuner import rl_tuner_ops
+import rl_tuner_ops
 import numpy as np
 import tensorflow.compat.v1 as tf
+from tqdm import tqdm
 
 
 def compute_composition_stats(rl_tuner,
@@ -37,7 +38,7 @@ def compute_composition_stats(rl_tuner,
   """
   stat_dict = initialize_stat_dict()
 
-  for i in range(num_compositions):
+  for i in tqdm(range(num_compositions)):
     stat_dict = compose_and_evaluate_piece(
         rl_tuner,
         stat_dict,
