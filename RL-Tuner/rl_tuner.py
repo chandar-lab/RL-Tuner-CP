@@ -66,6 +66,7 @@ class RLTuner(object):
   """Implements a recurrent DQN designed to produce melody sequences."""
 
   def __init__(self, output_dir,
+
                # Hyperparameters
                dqn_hparams=None,
                reward_mode='music_theory_all',
@@ -306,8 +307,6 @@ class RLTuner(object):
         reward_vars = reward_vars[:len(target_q_vars)]
 
         successful = True
-        print(reward_vars)
-        print(target_q_vars)
         for i in range(len(reward_vars)):
           reward = self.session.run(reward_vars[i])
           q = self.session.run(q_vars[i])
