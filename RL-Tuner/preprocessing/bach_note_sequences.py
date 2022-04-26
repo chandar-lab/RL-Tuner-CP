@@ -16,17 +16,33 @@ import random
 from scipy.spatial.distance import jensenshannon
 
 def extract_melodic_lines(melodies):
+    """Extracts melodic line
+      Args:
+        melodies: Note sequences (0 for rest, 1 for held note, 2+ for pitch)
+      Returns:
+        Melodies with no rest and no held tokens
+        """
     return [[note for note in melody if note > 1] for melody in melodies]
     
 def get_key(melody):
+    """Infers the key of the melody
+      Args:
+        melody: List of note pitches without rythmic information
+      Returns:
+        Scores for each possible major and minor key (lower is better)
+        """
+
+    # Profiles from https://www.jstor.org/stable/10.1525/mp.2008.25.3.193
     maj_profile = np.asarray([0.223, 0.006, 0.12, 0.003, 0.154, 0.109, 0.019, 0.189, 0.007, 0.076, 0.005, 0.089])
     maj_profile /= np.sum(maj_profile)
     min_profile = np.asarray([0.189, 0.005, 0.125, 0.144, 0.014, 0.105, 0.021, 0.213, 0.068, 0.02, 0.023, 0.073])
     min_profile /= np.sum(min_profile)
+
     key_freq = np.zeros((12))
     key_score_major = np.zeros((12))
     key_score_minor = np.zeros((12))
     for note in melody:
+        # For each note, we transpose it from G to C
         key_freq[(note - 5)%12] += 1
     key_freq /= len(melody)
 
@@ -34,26 +50,30 @@ def get_key(melody):
         key_test = [key_freq[(i + m)%12] for m in range(12)]
         key_score_major[i] = jensenshannon(maj_profile, key_test)
         key_score_minor[i] = jensenshannon(min_profile, key_test)
-        #print(key_test, key_score_major[i], key_score_minor[i])
-        
-    #print(key_score_major, key_score_minor)
-        
-    best_score_major = np.min(key_score_major)
-    best_score_minor = np.min(key_score_minor)
     
     return key_score_major, key_score_minor
     
 def c_major(melodies, a_minor):
+    """Transposes to c major or a minor
+      Args:
+        melodies: List of melodies to transpose
+        a_minor: True if we accept minor keys
+      Returns:
+        Transposed melodies
+        """
     c_major_melodies = []
     for melody in melodies:
         transposed_melody = []
         key_score_major, key_score_minor = get_key(melody)
         if np.min(key_score_major) < np.min(key_score_minor):
+            # If the melody is in major we transpose all the notes to C
             key = np.argmin(key_score_major)
             for note in melody:
                 transposed_melody.append(note - key)
         else:
+            # If the melody is in minor the key needs to be adjusted from C to A
             key = (np.argmin(key_score_minor) - 9) % 12
+            # We transpose only if we accept minor keys. Otherwise, the melody will be empty
             if a_minor:
                 for note in melody:
                     transposed_melody.append(note - key)
@@ -64,14 +84,16 @@ def c_major(melodies, a_minor):
     return c_major_melodies
 
 def convert_to_range(melodies, mode):
-    # For soprano voice
-    # In the counterpoint CP model: between 0 (G) and 28 (C)
-    # In the midi dataset: between 72 (C5) and 96 (C7)
-    # In the NoteRNN dataset: between 2 (C5) and 37 (B7)
-    # In the pickle dataset: 84 -> 65, 72 -> 53 (between 48 and 77) 65 -> C, 53 -> C, 41 -> C
-    # G: 60 72 84...
+    """Transposes the C major/A minor melodies to the right octave (between 0 and 28)
+      Args:
+        melodies: Melodies to transpose
+        mode: 'melodic lines', 'note sequences' or 'no hold'
+      Returns:
+        Transposed melodies
+        """
+
     range_melodies = []
-    g = np.array([6, 20, 34, 48, 60, 72, 84, 98])
+    g = np.array([6, 20, 34, 48, 60, 72, 84, 98]) # Possible transpositions
     final_middle = (28 - 0)/2 + 0
 
     for i in range(len(melodies)):
@@ -93,13 +115,15 @@ def convert_to_range(melodies, mode):
             offset = 0 if mode == 'melodic lines' else 1 if mode == 'no hold' else 2
             for j in range(len(melodies[i])):
                 new_value = melodies[i][j] - transpose + offset
+                # If the best range is impossible, we print a warning
                 if new_value < offset or new_value > (28 + offset):
                     new_value = -1
                     valid = False
-                    print(melodies[i][j], transpose, min, max)
+                    print('Cannot transpose note', melodies[i][j], 'with min', min, 'and max', max, 'of transpose', transpose)
 
                 range_melody.append(new_value)
-            
+
+            # We only add the melody if all the notes are in the range. Otherwise, we discard it
             if (valid):
                 range_melodies.append(range_melody)
             else:
@@ -110,12 +134,20 @@ def convert_to_range(melodies, mode):
     return range_melodies
     
 def extract_note_sequences(melodic_lines, note_sequences, mode):
+    """Adds rythmic information to transposed melodic lines
+          Args:
+            melodic_lines: Transposed and adjusted melodic lines
+            note_sequences: Initial sequences with rythmic information (rest and hold tokens)
+            mode: 'melodic lines', 'note sequences' or 'no hold'
+          Returns:
+            Transposed note sequences
+            """
     for i in range(len(note_sequences)):
         if len(melodic_lines[i]) > 0:
             melodic_line_index = 0
             for j in range(len(note_sequences[i])):
                 if j < len(note_sequences[i]) - 1 and note_sequences[i][j] == note_sequences[i][j + 1] and note_sequences[i][j] != 1:
-                    print(note_sequences[i])
+                    print('Warning: two consecutive notes have the same value with no hold token', note_sequences[i])
                     
                 if note_sequences[i][j] > 1:
                     note_sequences[i][j] = melodic_lines[i][melodic_line_index]
@@ -130,6 +162,13 @@ def extract_note_sequences(melodic_lines, note_sequences, mode):
     return note_sequences
      
 def make_inputs_labels(melodies, mode):
+    """Converts melodies into inputs and labels
+      Args:
+        melodies: Preprocessed melodies
+        mode: 'melodic lines', 'note sequences' or 'no hold'
+      Returns:
+        Array of inputs and array of labels
+        """
     n_note_values = 29 if mode == 'melodic lines' else 30 if mode == 'no hold' else 31
     inputs = []
     labels = []
@@ -178,6 +217,7 @@ def make_sequence_examples(inputs, labels):
   return sequence_examples
   
 def main():
+    """Converts note sequences to sequence examples"""
   
     train = True
     granularity = 16
@@ -236,7 +276,7 @@ def main():
     print("Sequence example.....")
     sequence_examples = make_sequence_examples(inputs, labels)
     print(len(inputs), len(labels))
-    print("Writing......A")
+    print("Writing......")
     writer = tf.io.TFRecordWriter('updates/no_hold_minor_sixteenth/' + output_file_name)
     for sequence_example in sequence_examples:
         writer.write(sequence_example.SerializeToString())
