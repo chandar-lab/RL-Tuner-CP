@@ -11,7 +11,7 @@ They are currently being refreshed, and separated into the various "parts" of th
 ..  Learning Outcomes
     =======================================
     Be able to
-    * Understand reversible data structures
+    * Understand stateful data structures
     * Understand a domain
     * Implement global constraints
     * Implement custom search

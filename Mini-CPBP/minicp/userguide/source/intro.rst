@@ -92,7 +92,7 @@ Getting Help with MiniCP
 
 You'll get the greatest chance of getting answers to your questions by using the MiniCP usergroup_.
 
-.. _usergroup: https://groups.google.com/d/forum/mini-cp
+.. _usergroup: https://groups.google.com/g/mini-cp
 
 
 Who Uses MiniCP?
@@ -100,15 +100,16 @@ Who Uses MiniCP?
 
 If you use it for teaching or for research, please let us know and we will add you in this list.
 
-* UCLouvain, `INGI2365 <https://uclouvain.be/cours-2017-LINGI2365>`_ Teacher: Pierre Schaus.
-* ACP, `Summer School <http://school.a4cp.org/summer2017/>`_ 2017, Porquerolles, France, Teacher: Pierre Schaus.
-* Université de Nice `Master in CS <http://unice.fr/formation/formation-initiale/sminf1212>`_  Teacher: Arnaud Malapert and Marie Pelleau 
+* UCLouvain, Belgium, `INGI2365 <https://uclouvain.be/cours-2017-LINGI2365>`_, teacher: Pierre Schaus.
+* ACP, `Summer School 2017 <https://school.a4cp.org/summer2017/>`_, Porquerolles, France, teacher: Pierre Schaus.
+* Université de Nice, France, `Master in CS <http://unice.fr/formation/formation-initiale/sminf1212>`_, teachers: Arnaud Malapert and Marie Pelleau.
 
 
 Citing MiniCP
 =============
 
-If you find MiniCP useful for your research or teaching you can cite:
+If you find MiniCP useful for your research or teaching, then you can
+cite the following paper (`PDF <https://doi.org/10.1007/s12532-020-00190-7>`_):
 
 .. code-block:: latex
 

@@ -30,25 +30,25 @@ It has the following signature:
 
     public Cumulative(IntVar[] start, int[] duration, int[] demand, int capa)
 
-where `capa` is the capacity of the resource and `start`, `duration`, and `demand` are arrays of the same size and represent
-properties of activities:
+where `capa` is the capacity of the resource and `start`, `duration`, and `demand` are arrays of equal size representing
+the following properties of the activities:
 
-* `start[i]` is the variable specifying the start time of activity `i`
-* `duration[i]` is the duration of activity `i`
-* `demand[i]` is the resource consumption or demand of activity `i`
+* `start[i]` is the variable specifying the start time of activity `i`,
+* `duration[i]` is the duration of activity `i`, and
+* `demand[i]` is the resource consumption or demand of activity `i`.
 
 
 
 
 The constraint ensures that the cumulative consumption of activities (also called the consumption profile)
-at any time is at most a given capacity:
+never exceeds the capacity:
 
 .. math:: \forall t: \sum_{i \mid t \in \left [start[i]..start[i]+duration[i]-1 \right ]} demand[i] \le capa
 
 
 
 The following example depicts three activities and their corresponding
-consumption profile. As it can be observed, the profile never exceeds
+consumption profile. As can be observed, the profile never exceeds
 the capacity 4:
 
 
@@ -56,7 +56,7 @@ the capacity 4:
     :scale: 50
     :width: 400
     :alt: scheduling cumulative
-
+    :align: center
 
 It corresponds to the instantiation of the following `Cumulative` constraint:
 
@@ -72,9 +72,9 @@ in terms of simple arithmetic and logical constraints as
 used in the equation above to describe its semantics.
 
 
-At any time `t` of the horizon a `BoolVar overlaps[i]`
-tells whether activity `i` overlaps time `t` or not.
-Then the overall consumption at `t` is obtained by:
+At any point in time `t` the `BoolVar overlaps[i]`
+designates whether activity `i` overlaps, potentially being performed at, `t` or not.
+The overall consumption at `t` can then be obtained by:
 
 .. math:: \sum_{i} overlaps[i] \cdot demand[i] \le capa
 
@@ -133,45 +133,46 @@ Consider in the next example the depicted activity that can be executed anywhere
 the two solid brackets.
 It cannot execute at its earliest start since this would
 violate the capacity of the resource.
-We thus need to push the activity up until we find a time
+We thus need to postpone the activity until a point in time
 where it can execute over its entire duration
 without being in conflict with the profile and the capacity.
-The earliest time  is 7:
+The earliest point in time is 7:
 
 
 .. image:: ../_static/timetable2.svg
     :scale: 50
     :width: 600
     :alt: scheduling timetable1
-
+    :align: center
 
 **Profiles**
 
 
 We provide a class `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_
-that is able to build efficiently a resource profile given an array of rectangles in input.
+that is able to efficiently build a resource profile given an array of rectangles as input.
 A rectangle has three attributes: `start`, `end`, and `height`, as shown next:
 
 .. image:: ../_static/rectangle.svg
     :scale: 50
     :width: 250
     :alt: rectangle
+    :align: center
 
-A profile is nothing else but a sequence of rectangles.
-An example of profile is given next. It is built from three input rectangles provided to the constructor of `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_.
+A profile is nothing more but a sequence of rectangles.
+An example profile is given next. It is built from three input rectangles provided to the constructor of `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_.
 
 The profile consists of 7 contiguous rectangles.
 The first rectangle, `R0`, starts at `Integer.MIN_VALUE` with a height of zero,
-and the last rectangle, `R6`, ends in `Integer.MAX_VALUE`, also with a height of zero.
+and the last rectangle, `R6`, ends at `Integer.MAX_VALUE`, also with a height of zero.
 These two dummy rectangles are convenient because they guarantee
-the property that any time point falls into one rectangle of the profile:
+that there exists a rectangle in the profile for any point in time:
 
 
 .. image:: ../_static/profile.svg
     :scale: 50
     :width: 650
     :alt: profile
-
+    :align: center
 
 Make sure you understand how to build and manipulate
 `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_.
@@ -204,13 +205,14 @@ Be careful because not every activity has a mandatory part:
     :scale: 50
     :width: 600
     :alt: scheduling timetable1
+    :align: center
 
 *TODO 2* is to check that the profile is not exceeding the capacity.
 You can check that each rectangle of the profile is not exceeding the capacity;
 otherwise you throw an `InconsistencyException`.
 
-*TODO 3* is to filter the earliest start of unbound activities by pushing each
-activity (if needed) to the earliest slot when it can be executed without violating the capacity threshold.
+*TODO 3* is to filter the earliest start of unbound activities by postponing each
+activity (if needed) to the earliest slot when it can be executed without exceeding the capacity.
 
 
 .. code-block:: java
@@ -219,13 +221,14 @@ activity (if needed) to the earliest slot when it can be executed without violat
             if (!start[i].isBound()) {
                 // j is the index of the profile rectangle overlapping t
                 int j = profile.rectangleIndex(start[i].getMin());
-                // TODO 3: push i to the right
+                // TODO 3: postpone i to a later point in time
                 // hint:
-                // You need to check that at every-point on the interval
-                // [start[i].getMin() ... start[i].getMin()+duration[i]-1] there is enough space.
-                // You may have to look-ahead on the next profile rectangle(s)
-                // Be careful that the activity you are currently pushing may have contributed to the profile.
-
+                // Check that at every point in the interval
+                // [start[i].getMin() ... start[i].getMin()+duration[i]-1]
+                // there is enough remaining capacity.
+                // You may also have to check the following profile rectangle(s).
+                // Note that the activity you are currently postponing
+                // may have contributed to the profile.
             }
         }
 
@@ -233,8 +236,7 @@ activity (if needed) to the earliest slot when it can be executed without violat
 Check that your implementation passes the tests `CumulativeTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/CumulativeTest.java?at=master>`_.
 
 
-.. [TT2015] Gay, S., Hartert, R., & Schaus, P. (2015, August). Simple and scalable time-table filtering for the cumulative constraint. In International Conference on Principles and Practice of Constraint Programming (pp. 149-157). Springer.
-
+.. [TT2015] Gay, S., Hartert, R., & Schaus, P. (2015). Simple and scalable time-table filtering for the cumulative constraint. International Conference on Principles and Practice of Constraint Programming, pp. 149-157. Springer. (`PDF <https://doi.org/10.1007/978-3-319-23219-5_11>`_)
 
 
 The Resource-Constrained Project Scheduling Problem (RCPSP)

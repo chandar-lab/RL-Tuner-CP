@@ -26,92 +26,98 @@ DFS Explicit Stack
 The search algorithm of MiniCP is *depth-first-search*.
 It is implemented using a recursive method in the class
 `DFSearch.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/search/DFSearch.java?at=master>`_.
-To avoid any `stack-overflow` exception due to a too deep recursion in Java
+To avoid `stack-overflow` exceptions due to a too deep recursion in Java
 we ask you to reimplement the depth-first search with an explicit stack
 instead of relying on the recursion-call stack.
 
-Consider the following search tree where alternatives to execute are represented as letters:
+Consider the following search tree where branches to execute are represented as letters:
 
 
 .. image:: ../_static/dfs.svg
     :scale: 50
     :width: 250
     :alt: DFS
+    :align: center
 
 
-A DFS exploration should execute the branches in the following order `A->D->E->B->C->F->G`.
-On backtrack, the state should be restored and therefore these successive executions of the branches
-should be interleaved with 'push' and 'pop' operations on the trail.
-For instance, a valid sequence for restoring the states on backtrack is the following:
-`push->A->push->D->pop->push->E->pop->pop->push->B->pop->push->C->push->F->pop->push->G->pop->pop`.
-The `push` operations are executed in pre-order fashion while the `pop` operations are executed in a post-order fashion.
-This is highlighted in the recursive dfs code given next:
+A DFS exploration should execute the above branches in the following sequence `A, D, E, B, C, F, G`.
+When backtracking, the previous state must be restored, requiring that the state is saved with the
+`save` operation before the branch is executed and restored with the `restore` operation when the branch terminates.
+For example; a valid sequence that successfully saves and restores the state when backtracking is:
+`save->A->save->D->restore->save->E->restore->restore->save->B->restore->save->C->save->F->restore->save->G->restore->restore`.
+Note that the state manager performs a `save` operation prior to searching and a `restore` operation after search
+concludes. The `save` operation is executed in pre-order fashion while the `restore` operation is executed in a post-order fashion.
+The following code snippet shows a recursive implementation. Note that the saving and restoring of states is performed
+in the method `withNewState` of the state manager `sm`:
 
 .. code-block:: java
-   :emphasize-lines: 10, 13, 19
 
-        private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
-            if (limit.stopSearch(statistics)) throw new StopSearchException();
-            Procedure[] branches = branching.get();
-            if (alternatives.length == 0) {
-                statistics.nSolutions++;
-                notifySolutionFound();
-            }
-            else {
-                for (Procedure b : branches) {
-                    state.saveState(); // pre-order
+    private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
+        if (limit.test(statistics))
+            throw new StopSearchException();
+        Procedure[] branches = branching.get();
+        if (branches.length == 0) {
+            statistics.incrSolutions();
+            notifySolution();
+        } else {
+            for (Procedure b : branches) {
+                sm.withNewState(() -> { // State is saved before procedure is called.
                     try {
-                        statistics.nNodes++;
-                        alt.call(); // call the alternative
-                        dfs(statistics,limit);
+                        statistics.incrNodes();
+                        b.call();
+                        dfs(statistics, limit);
                     } catch (InconsistencyException e) {
+                        statistics.incrFailures();
                         notifyFailure();
-                        statistics.nFailures++;
                     }
-                    state.restoreState(); // post-order
-                }
+                }); // State is restored when procedure terminates.
             }
         }
+    }
 
-A skeleton code for a solution is given next but you don't have to follow exactly this solution since there are many ways to implement it:
+Skeleton code for a solution is given below. However, there are many possible implementations, so feel free to not use
+the skeleton code.
 
 .. code-block:: java
    :emphasize-lines: 3
 
-        private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
-            Stack<Procedure> alternatives = new Stack<Procedure>();
-            expandNode(alternatives,statistics); // root expension
-            while (!alternatives.isEmpty()) {
-                if (limit.stopSearch(statistics)) throw new StopSearchException();
-                try {
-                    alternatives.pop().call();
-                } catch (InconsistencyException e) {
-                    notifyFailure();
-                    statistics.nFailures++;
-                }
+    private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
+        Stack<Procedure> alternatives = new Stack<Procedure>();
+        expandNode(alternatives, statistics); // root expansion
+        while (!alternatives.isEmpty()) {
+            if (limit.test(statistics))
+                throw new StopSearchException();
+            try {
+                alternatives.pop().call();
+            } catch (InconsistencyException e) {
+                notifyFailure();
+                statistics.incrFailures();
             }
         }
-        private void expandNode(Stack<Procedure> alternatives, SearchStatistics statistics) {
-           // TODO
-        }
+    }
+    private void expandNode(Stack<Procedure> alternatives, SearchStatistics statistics) {
+        // TODO
+    }
 
 
-The idea of this solution is to wrap the push/pop/alternative execution inside `Alternative` closure objects
-as illustrated in the next figure showing the stack after the root node expansion at line 3:
+The idea of this solution is wrap the save, restore, and branch executions inside `Alternative` closure objects,
+as illustrated on the next figure showing the stack after the root node expansion at line 3.
 
 .. image:: ../_static/stackalternatives.svg
     :scale: 50
     :width: 250
     :alt: DFS
-
+    :align: center
 
 
 Check that your implementation passes the tests `DFSearchTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/search/DFSearchTest.java?at=master>`_.
 
-
-Remark (optional): It is actually possible to reduce the number of operations on the trail
-by skipping the push on a last branch at a given node.
-The sequence of operations becomes `push->push->A->push->D->pop->E->pop->push->B->pop->C->push->F->pop->G->pop`.
+Remark (optional): It is possible to reduce the number of operations by skipping the save and restore
+operations for the for the last branch of any node (the branches B, C, E, and G in the
+example above).
+The sequence of operations becomes `save->A->save->D->restore->E->restore->save->B->restore->C->save->F->restore->G`.
+As stated above, the state manager will perform a save operation before searching and a restore operation once searching
+concludes.
 
 Implement a Custom Search
 =================================
@@ -131,8 +137,8 @@ to implement a custom search strategy. A skeleton code for a custom search is th
                 return EMPTY;
             int v = sel.min(); // value selector (TODO)
             return branch(
-                () -> equal(sel,v),
-                () -> notEqual(sel,v)
+                () -> cp.post(equal(sel,v)),
+                () -> cp.post(notEqual(sel,v))
             );
         });
 
@@ -157,6 +163,7 @@ Furthermore, we may want to apply a specific heuristic on `x` which is different
     :scale: 50
     :width: 200
     :alt: combinator
+    :align: center
 
 This can be achieved as follows:
 

@@ -59,7 +59,7 @@ While, from a modeling perspective, the outcomes include:
 MiniCP Article
 ===============
 
-The complete architecture of MiniCP is described in this `article <_static/mini-cp.pdf>`_ (`editor link <https://link.springer.com/article/10.1007/s12532-020-00190-7>`_):
+The complete architecture of MiniCP is described in this `paper <_static/mini-cp.pdf>`_ (`publisher PDF <https://doi.org/10.1007/s12532-020-00190-7>`_):
 
 .. code-block:: text
 

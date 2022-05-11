@@ -49,9 +49,9 @@ A naive (but correct) way of iterating over a domain is:
 .. code-block:: java
 
     for (int v = x.min(); v <= x.max(); x++) {
-                if (x.contains(i)) {
-                    // do something
-                }
+        if (x.contains(i)) {
+            // do something
+        }
     }
 
 This method is rather inefficient because it will also consider the values that are not present in the domain.

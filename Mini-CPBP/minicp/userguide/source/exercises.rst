@@ -25,7 +25,7 @@ Learning Outcomes
 
 Be able to
 
-* Understand reversible data structures
+* Understand stateful data structures
 * Understand a domain
 * Implement global constraints
 * Implement custom search
@@ -48,23 +48,23 @@ Less or equal reified constraint
 
 Implement `IsLessOrEqual.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/IsLessOrEqual.java?at=master>`_
 
-This is a reified constraint for `b iff x <= v`
-that is boolean variable `b` is set true if and only if `x` variable is less or equal to value `v`.
+This is a reified constraint for `b iff x <= c`
+that is boolean variable `b` is set true if and only if `x` variable is less than or equal to value `c`.
 
-For example the constraint holds for
+For example, the constraint holds for
 
 .. code-block:: java
 
-    b = true , x = 4, v = 5
-    b = false, x = 4, v = 2
+    b = true , x = 4, c = 5
+    b = false, x = 4, c = 2
 
 
 but is violated for
 
 .. code-block:: java
 
-    b = true , x = 5, v = 4
-    b = false, x = 2, v = 4
+    b = true , x = 5, c = 4
+    b = false, x = 2, c = 4
 
 
 Check that your implementation passes the tests `IsLessOrEqualTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/IsEqualTest.java?at=master>`_
@@ -75,101 +75,108 @@ DFS Explicit Stack
 ===================
 
 
-The search algorithm of mini-cp is *depth-first-search*.
+The search algorithm of MiniCP is *depth-first-search*.
 It is implemented using a recursive method in the class
-`DFSSearch.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/search/DFSearch.java?at=master>`_.
-To avoid any `stack-overflow` exception due to too a deep recursion in Java
-we ask you to reimplement the depth-first-search with an explicit stack
-of instead of relying on the recursion call stack.
+`DFSearch.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/search/DFSearch.java?at=master>`_.
+To avoid `stack-overflow` exceptions due to a too deep recursion in Java
+we ask you to reimplement the depth-first search with an explicit stack
+instead of relying on the recursion-call stack.
 
-Consider the following search tree where alternatives to execute are represented as letters. 
+Consider the following search tree where branches to execute are represented as letters:
 
 
-.. image:: _static/dfs.svg
+.. image:: ../_static/dfs.svg
     :scale: 50
     :width: 250
     :alt: DFS
+    :align: center
 
-A DFS exploration should executes the alternative in the following order `A->D->E->B->C->F->G`.
-On backtrack, the state should be restored and therefore these successive executions of the alternatives
-should be interleaved with 'push' and 'pop' operations on the trail.
-For instance a valid sequence for restoring the states on backtrack is the following:
-`push->A->push->D->pop->push->E->pop->pop->push->B->pop->push->C->push->F->pop->push->G->pop->pop`.
-The `push` operations are executed in pre-order fashion while the `pop` operations are executed in a post-order fashion.
-This is highlighted in the recursive dfs code given next.
+
+A DFS exploration should execute the above branches in the following sequence `A, D, E, B, C, F, G`.
+When backtracking, the previous state must be restored, requiring that the state is saved with the
+`save` operation before the branch is executed and restored with the `restore` operation when the branch terminates.
+For example; a valid sequence that successfully saves and restores the state when backtracking is:
+`save->A->save->D->restore->save->E->restore->restore->save->B->restore->save->C->save->F->restore->save->G->restore->restore`.
+Note that the state manager performs a `save` operation prior to searching and a `restore` operation after search
+concludes. The `save` operation is executed in pre-order fashion while the `restore` operation is executed in a post-order fashion.
+The following code snippet shows a recursive implementation. Note that the saving and restoring of states is performed
+in the method `withNewState` of the state manager `sm`:
 
 .. code-block:: java
-   :emphasize-lines: 10, 13, 19
 
-    private void dfs(SearchStatistics statistics, SearchLimit limit) {
-        if (limit.stopSearch(statistics)) throw new StopSearchException();
-        Alternative [] alternatives = choice.call(); // generate the alternatives
-        if (alternatives.length == 0) {
-            statistics.nSolutions++;
-            notifySolutionFound();
-        }
-        else {
-            for (Alternative alt : alternatives) {
-                state.push(); // pre-order
-                try {
-                    statistics.nNodes++;
-                    alt.call(); // call the alternative
-                    dfs(statistics,limit);
-                } catch (InconsistencyException e) {
-                    notifyFailure();
-                    statistics.nFailures++;
-                }
-                state.pop(); // post-order
+    private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
+        if (limit.test(statistics))
+            throw new StopSearchException();
+        Procedure[] branches = branching.get();
+        if (branches.length == 0) {
+            statistics.incrSolutions();
+            notifySolution();
+        } else {
+            for (Procedure b : branches) {
+                sm.withNewState(() -> { // State is saved before procedure is called.
+                    try {
+                        statistics.incrNodes();
+                        b.call();
+                        dfs(statistics, limit);
+                    } catch (InconsistencyException e) {
+                        statistics.incrFailures();
+                        notifyFailure();
+                    }
+                }); // State is restored when procedure terminates.
             }
         }
     }
 
-A skeletton of solution is given next but you don't have to follow exactly this solution since there are many ways
-to implement it.
+Skeleton code for a solution is given below. However, there are many possible implementations, so feel free to not use
+the skeleton code.
 
 .. code-block:: java
    :emphasize-lines: 3
 
-    private void dfs(SearchStatistics statistics, SearchLimit limit) {
-        Stack<Alternative> alternatives = new Stack<Alternative>();
-        expandNode(alternatives,statistics); // root expension
+    private void dfs(SearchStatistics statistics, Predicate<SearchStatistics> limit) {
+        Stack<Procedure> alternatives = new Stack<Procedure>();
+        expandNode(alternatives, statistics); // root expansion
         while (!alternatives.isEmpty()) {
-            if (limit.stopSearch(statistics)) throw new StopSearchException();
+            if (limit.test(statistics))
+                throw new StopSearchException();
             try {
                 alternatives.pop().call();
             } catch (InconsistencyException e) {
                 notifyFailure();
-                statistics.nFailures++;
+                statistics.incrFailures();
             }
         }
     }
-    private void expandNode(Stack<Alternative> alternatives, SearchStatistics statistics) {
-       // TODO
+    private void expandNode(Stack<Procedure> alternatives, SearchStatistics statistics) {
+        // TODO
     }
 
-The idea of this solution is wrap the push/pop/alternative execution inside `Alternative` closure objects
-as illustrated on the next figure showing the stack after the root node expansion at line 3. 
 
-.. image:: _static/stackalternatives.svg
+The idea of this solution is wrap the save, restore, and branch executions inside `Alternative` closure objects,
+as illustrated on the next figure showing the stack after the root node expansion at line 3.
+
+.. image:: ../_static/stackalternatives.svg
     :scale: 50
     :width: 250
     :alt: DFS
-    
-    
-    
-Check that your implementation passes the tests `DFSearchTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/search/DFSearchTest.java?at=master>`_
+    :align: center
 
 
-Remark (optional): It is actually possible to reduce the number of operations on the trail 
-by skipping the push on a last branch at a given node. 
-The sequence of operations becomes `push->push->A->push->D->pop->E->pop->push->B->pop->C->push->F->pop->G->pop`.
+Check that your implementation passes the tests `DFSearchTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/search/DFSearchTest.java?at=master>`_.
+
+Remark (optional): It is possible to reduce the number of operations by skipping the save and restore
+operations for the for the last branch of any node (the branches B, C, E, and G in the
+example above).
+The sequence of operations becomes `save->A->save->D->restore->E->restore->save->B->restore->C->save->F->restore->G`.
+As stated above, the state manager will perform a save operation before searching and a restore operation once searching
+concludes.
 
 
 
 Domain with an arbitrary set of values
 =================================================================================
 
-Implement the missing constructor in `IntVarImpl.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/core/IntVarImpl.java?at=master>`_
+Implement the missing constructor in `IntVarImpl.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/core/IntVarImpl.java?at=master>`_:
 
 
 .. code-block:: java
@@ -179,77 +186,81 @@ Implement the missing constructor in `IntVarImpl.java <https://bitbucket.org/min
     }
 
 
-This exercise is straightforward: just create a dense domain then remove the values not present in the set.
+This exercise is straightforward: just create a dense domain and then remove the values not present in the set.
 
-Check that your implementation passes the tests `IntVarTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/core/IntVarTest.java?at=master>`_
+Check that your implementation passes the tests `IntVarTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/core/IntVarTest.java?at=master>`_.
 
 
 Implement a domain iterator
 ======================================
 
-Many filtering algorithms require to iterate over the values of a domain.
-The `fillArray` method from `ReversibleSparseSet.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/minicp/reversible/ReversibleSparseSet.java?at=master>`_
-allows to fill an array with all the values present in the sparse-set relying on the very efficient 'System.arraycopy'.
+Many filtering algorithms require iteration over the values of a domain.
+
+A naive (but correct) way of iterating over a domain is:
+
 
 .. code-block:: java
 
-    /**
-     * set the first values of <code>dest</code> to the ones
-     * present in the set
-     * @param dest, an array large enough dest.length >= getSize()
-     * @return the size of the set
-     */
-    public int fillArray(int [] dest) {
-        int s = size.getValue();
-        System.arraycopy(values, 0, dest, 0, s);
-        return s;
+    for (int v = x.min(); v <= x.max(); x++) {
+        if (x.contains(i)) {
+            // do something
+        }
     }
-    
-    
-The main advantage over the iterator mechanism is that not object is created (and thus garbage collected). 
+
+This method is rather inefficient because it will also consider the values that are not present in the domain.
+Instead the `fillArray` method from `StateSparseSet.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/state/StateSparseSet.java?at=master>`_
+allows filling an array with all the values present in the sparse-set.
+In case of an offset value of 0, you could even use the very efficient `System.arraycopy`.
+
+The main advantage over the iterator mechanism is that no object is created (and thus garbage collected).
 Indeed `dest` is typically a container array stored as an instance variable and reused many times.
-This is important for efficiency to avoid creating objects on the heap at each execution of a propagator.
-Never forget that a 'propagate()' method of 'Constraint' may be called thousands of times per second.
-This implementation using `fillArray` avoids the `ConcurrentModificationException` discussion 
-when implementing an Iterator: should we allow to modify a domain while iterating on it ?
+It is important for efficiency to avoid creating objects on the heap at each execution of a propagator.
+Never forget that a `propagate()` method of `Constraint` may be called thousands of times per second.
+This implementation using `fillArray` avoids the `ConcurrentModificationException` discussion
+when implementing an Iterator: should we allow modifying a domain while iterating on it?
 The answer here is very clear: you get a snapshot of the domain at the time of the call to `fillArray` and you can thus
-safely iterate over this `dest` array and modifying the domain at the same time.
+safely iterate over this `dest` array and modify the domain at the same time.
 
 
 To do:
 
+
+* Improve the efficiency of `fillArray` from `StateSparseSet.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/state/StateSparseSet.java?at=master>`_ to use `System.arraycopy` when possible.
 * Implement `public int fillArray(int [] dest)` in `IntVarImpl.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/core/IntVarImpl.java?at=master>`_.
-* Check that your implementation passes the tests `IntVarTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/core/IntVarTest.java?at=master>`_ add also add more tests.
+* Check that your implementation passes the tests `IntVarTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/core/IntVarTest.java?at=master>`_ and also add more tests.
 
 
 Implement a Custom Search
 =================================
 
-Modify the Quadratic Assignment Model `QAP.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/QAP.java?at=master>`_
-to implement a custom search strategy. A skeleton for a custom search is the following one:
+Modify the Quadratic Assignment model `QAP.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/QAP.java?at=master>`_
+to implement a custom search strategy. A skeleton code for a custom search is the following one:
 
 
 .. code-block:: java
 
-        DFSearch dfs = makeDfs(cp,
-                selectMin(x,
-                        x -> x.getSize() > 1, // filter
-                        x -> x.getSize(), // variable selector
-                        xi -> {
-                            int v = xi.getMin(); // value selector (TODO)
-                            return branch(() -> equal(xi,v),
-                                    () -> notEqual(xi,v));
-                        }
-                ));
-                
+        DFSearch dfs = makeDfs(cp, () -> {
+            IntVar sel = selectMin(x,
+                    vari -> vari.size() > 1, // filter
+                    vari -> vari.size()      // variable selector
+            );
+            if (sel == null)
+                return EMPTY;
+            int v = sel.min(); // value selector (TODO)
+            return branch(
+                () -> cp.post(equal(sel,v)),
+                () -> cp.post(notEqual(sel,v))
+            );
+        });
 
-* As a variable heuristic, select the unbound variable `x[i]` (a facility `i` not yet assigned to a location) that has a maximum weight `w[i][j]` with another facility `j` (`x[j]` may be bound or not).
-* As a value heuristic, on the left branch, place this facility to on the location which is the closest possible to another location possible for facility `j`. On the right branch remove this value. 
-* Hint: `selectMin` is a generic method parameterized by 'T'. To implement this heuristic, adding pairs `(i,j)` as a type for `T` is probably the easiest way to go.
 
-   .. code-block:: java
+* As a variable heuristic, select an unbound variable `x[i]` (a facility `i` not yet assigned to a location) that has a maximum weight `w[i][j]` with another facility `j` (where `x[j]` may be bound or not).
+* As a value heuristic, on the left branch place this facility on a location :math:`k` which is the closest possible to another location possible for the facility `j` you selected earlier. On the right branch remove the value :math:`k`.
+* Hint: `selectMin` is a generic method parameterized by 'T' and 'N' (the type on which the minimum is computed). To implement this heuristic, adding pairs `(i,j)` as a type for `T` is probably the easiest way to go:
 
-           public static <T> Choice selectMin(T[] x, Filter<T> p, ValueFun<T> f, BranchOn<T> body)             
+.. code-block:: java
+
+    public static <T, N extends Comparable<N>> T selectMin(T[] x, Predicate<T> p, Function<T, N> f)
 
 
 Experiment and modify LNS
@@ -257,7 +268,7 @@ Experiment and modify LNS
 
 Experiment the Quadratic Assignment Model with LNS `QAPLNS.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/QAPLNS.java?at=master>`_
 
-* Does it converge faster to good solutions than the standard DFS ? Use the larger instance with 25 facilities.
+* Does it converge faster to good solutions than the standard DFS ? Use the larger instance with 26 facilities.
 * What is the impact of the percentage of variables relaxed (experiment with 5, 10 and 20%) ?
 * What is the impact of the failure limit (experiment with 50, 100 and 1000)?
 * Which parameter setting work best? How would you choose it?
@@ -269,11 +280,11 @@ Element constraint
 =================================
 
 
-Implement `Element1D.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Element1D.java?at=master>`_
+Implement `Element1D.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Element1D.java?at=master>`_.
 
 
-An element constraint is to index an array `T` by an index variable `x` and link the result with a variable `z`.
-More exactly the relation `T[x]=z` must hold.
+Given an array `T` and the variables `x` and `z` the element constraint enforces that `z` take the value at the
+`x`:th index of `T`. More exactly the relation `T[x]=z` must hold (where indexing starts from 0).
 
 Assuming `T=[1,3,5,7,3]`, the constraint holds for
 
@@ -291,58 +302,60 @@ but is violated for
     x = 3, z = 3
 
 
-Check that your implementation passes the tests `Element1DTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/Element1DTest.java?at=master>`_
+Check that your implementation passes the tests `Element1DTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/Element1DTest.java?at=master>`_.
 
 
 Two possibilities:
 
-1. extends `Element2D` and reformulate `Element1D` as an `Element2D` constraint in super call of the constructor.
-2. implement a dedicated algo (propagate, etc) for `Element1D` by taking inspiration from `Element2D`.
+1. Extend `Element2D` and reformulate `Element1D` as an `Element2D` constraint in a super call of the constructor.
+2. Implement a dedicated propagator for `Element1D` by taking inspiration from `Element2D`.
 
-Does your filtering achieve domain-consistency on D(Z)? Implement a domain-consistent version, write tests to make sure it is domain consistent.
+Does your filtering achieve domain consistency on D(z)? Implement a domain-consistent version, and write tests to make sure it is domain-consistent.
 
 
 Circuit Constraint
 ========================
 
-The circuit constraint enforces an hamiltonian circuit on a successor array.
-On the next example the successor array is `[2,4,1,5,3,0]`
+The circuit constraint enforces a hamiltonian circuit on a successor array.
+In the following example the successor array is `[2,4,1,5,3,0]`, where the indices of the array are the origins of the directed edges:
 
-.. image:: _static/circuit.svg
+.. image:: ../_static/circuit.svg
     :scale: 50
     :width: 250
     :alt: Circuit
+    :align: center
 
 
 All the successors must be different.
-but enforcing the `allDifferent` constraint is not enough.
+But enforcing the `allDifferent` constraint is not enough.
 We must also guarantee it forms a proper circuit (without sub-tours).
-This can be done efficiently and incrementally by keeping track of the sub-chains
-appearing during the search.
-The data-structure for the sub-chains should be a reversible.
-Our instance variables used to keep track of the sub-chains are:
+This can be done efficiently and incrementally by keeping track of the subchains
+that appears during search.
+The data structure for the subchains should be stateful.
+The instance variables used to keep track of the subchains are:
 
 .. code-block:: java
 
     IntVar [] x;
-    ReversibleInt [] dest;
-    ReversibleInt [] orig;
-    ReversibleInt [] lengthToDest;
+    StateInt [] dest;
+    StateInt [] orig;
+    StateInt [] lengthToDest;
 
-
+Where:
 
 * `dest[i]` is the furthest node we can reach from node `i` following the instantiated edges.
-* `orig[i]` is the furthest node we can reach from node `i` following instantiated edges in reverse direction.
+* `orig[i]` is the furthest node we can reach from node `i` following the instantiated edges in the opposite direction.
 * `lengthToDest[i]` is the number of instantiated edges on the path from node `i` to `dest[i]`.
 
-Consider the following example with instantiated edges colored in grey.
+Consider the following example with instantiated edges colored in grey:
 
-.. image:: _static/circuit-subtour.svg
+.. image:: ../_static/circuit-subtour.svg
     :scale: 50
     :width: 250
     :alt: Circuit
+    :align: center
 
-Before the addition of the green link we have
+Before the addition of the green edge we have:
 
 .. code-block:: java
 
@@ -350,7 +363,7 @@ Before the addition of the green link we have
     orig = [0,1,0,4,4,4];
     lengthToDest = [1,0,0,1,2,0];
 
-After the addition of the green link we have
+After the addition of the green edge we have:
 
 .. code-block:: java
 
@@ -359,14 +372,14 @@ After the addition of the green link we have
     lengthToDest = [1,0,0,3,4,2];
 
 
-In your implementation you must update the reversible integers to reflect
-the change after the addition of every new edge.
+In your implementation you must update the stateful integers to reflect
+the changes after the addition of every new edge.
 You can use the `CPIntVar.whenBind(...)` method for that.
 
-The filtering in itself consists in preventing to close a
+The filtering algorithm is to prevent closing each
 sub-tour that would have a length less than `n` (the number of nodes).
-Since node 4 has a length to destination (node 2) of 4 (<6), the destination node 2 can not have 4 as successor
-and the red link is deleted.
+Since node 4 has a length to destination (node 2) of 4 (<6), the destination node 2 cannot have 4 as successor
+and the red potential edge is deleted.
 This filtering was introduced in [TSP1998]_ for solving the TSP with CP.
 
 
@@ -378,214 +391,250 @@ Check that your implementation passes the tests `CircuitTest.java <https://bitbu
 .. [TSP1998] Pesant, G., Gendreau, M., Potvin, J. Y., & Rousseau, J. M. (1998). An exact constraint logic programming algorithm for the traveling salesman problem with time windows. Transportation Science, 32(1), 12-29.
 
 
-Custom search strategy
+Custom Search for TSP
 =================================
 
 Modify `TSP.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/TSP.java?at=master>`_
 to implement a custom search strategy.
-A skeleton is the following one:
+Use the following code as skeleton code:
 
 
 .. code-block:: java
 
-        DFSearch dfs = makeDfs(cp,
-                selectMin(succ,
-                        succi -> succi.getSize() > 1, // filter
-                        succi -> succi.getSize(), // variable selector
-                        succi -> {
-                            int v = succi.getMin(); // value selector (TODO)
-                            return branch(() -> equal(succi,v),
-                                    () -> notEqual(succi,v));
-                        }
-                ));
+    DFSearch dfs = makeDfs(cp, () -> {
+        IntVar xs = selectMin(succ,
+                xi -> xi.size() > 1, // filter
+                xi -> xi.size()); // variable selector
+        if (xs == null)
+            return EMPTY;
+
+        int v = xs.min(); // value selector (TODO)
+        return branch(() -> cp.post(equal(xs, v)),
+                () -> cp.post(notEqual(xs, v)));
+    });
 
 
 
 
 
-* The unbound variable selected is one with smallest domain (first-fail).
-* It is then assigned the minimum value in the domain.
+* The unbound variable selected is one with a smallest domain (first-fail).
+* The selected variable is then assigned the minimum value in its domain.
 
-This value selection strategy is not well suited for the TSP (and VRP).
+This value selection strategy is not well suited for the TSP (and VRP in general).
 The one you design should be more similar to the decision you would
 make manually in a greedy fashion.
-For instance you can select as a successor for `succi`
-the closest city in the domain.
+For instance, you can select as a successor for `xi`
+a closest city in its domain.
 
 Hint: Since there is no iterator on the domain of a variable, you can
-iterate from the minimum value to the maximum one using a for loop
-and check if it is in the domain with the `contains` method.
+iterate from the minimum value to the maximum one using a `for` loop
+and checking that the value of the current iteration is in the domain using the `contains` method.
+You can also use your iterator from :ref:`Part 2: Domains, Variables, Constraints`.
 
 You can also implement a min-regret variable selection strategy.
-It selects the variable with the largest different between the closest
-successor city and the second closest one.
+It selects a variable with the largest difference between a closest
+successor city and a second-closest one.
 The idea is that it is critical to decide the successor for this city first
-because otherwise you will regret it the most.
+because otherwise one will regret it the most.
 
-Observe the first solution obtained and its objective value ?
-Is it better than the naive first fail ?
-Also observe the time and number of backtracks necessary for proving optimality.
-By how much did you reduce the computation time ?
+Observe the first solution obtained to the provided instance and its objective value:
+is it better than upon naive first-fail?
+Also observe the time and number of backtracks necessary for proving optimality:
+by how much did you reduce the computation time and number of backtracks?
 
 
-LNS
+LNS applied to TSP
 =================================================================
 
-Modify further `TSP.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/TSP.java?at=master>`_
-to implement a LNS search.
-Use the larger 17x17 distance matrix for this exercise.
+You will implement and apply LNS search by modifying
+`TSP.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/TSP.java?at=master>`_
+Use the provided 17x17 distance matrix for this exercise.
 
 What you should do:
 
 
 * Record the assignment of the current best solution. Hint: use the `onSolution` call-back on the `DFSearch` object.
-* Implement a restart strategy fixing randomly '10%' of the variables to their value in the current best solution.
+* Implement a restart strategy fixing randomly 10% of the variables to their value in the current best solution.
 * Each restart has a failure limit of 100 backtracks.
 
 An example of LNS search is given in  `QAPLNS.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/QAPLNS.java?at=master>`_.
-You can simply copy/paste/modify this implementation for the TSP.
+You can simply copy/paste/modify this implementation for the TSP:
 
 
-Does it converge faster to good solutions than the standard DFS ?
-What is the impact of the percentage of variables relaxed (experiment with 5, 10 and 20%) ?
-What is the impact of the failure limit (experiment with 50, 100 and 1000)?
-Which parameter setting work best? How would you choose it?
+* Does it converge faster to good solutions than the standard DFS? Use the larger instance with 26 facilities.
+* What is the impact of the percentage of variables relaxed (experiment with 5, 10 and 20%)?
+* What is the impact of the failure limit (experiment with 50, 100 and 1000)?
+* Which parameter setting works best? How would you choose it?
+* Imagine a different relaxation specific for this problem. Try to relax the decision variables
+  that have the strongest impact on the objective with a greater probability (the relaxed variables should still be somehow randomized). You can
+  for instance compute for each facility `i` the quantity:
+
+  .. math::
+       s_i = \sum\limits_{j}{d[x[i]][x[j]] \cdot w[i][j]}
+
+  and base your decision to relax facilities based on those values.
 
 
 Table Constraint
 ================
 
-The table constraint (also called extension constraint)
-specify the list of solutions (tuples) assignable to a vector of variables.
+The table constraint (also called the extension constraint)
+specifies the list of solutions (tuples) assignable to a vector of variables.
 
-More precisely, given an array `X` containing `n` variables, and an array `T` of size `m*n`, this constraint holds:
+More precisely, given an array `X` containing `n` variables, and an array `T` of size `m × n`, this constraint holds:
 
 .. math::
 
-    \exists i: \forall\ j\ T_{i,j} = X_j
+    \exists i: \forall j: T_{i,j} = X_j
 
-That is, each line of the table is a valid assignment to `X`.
+That is, each row of the table is a valid assignment to `X`.
 
-Here is an example of a table, with five tuples and four variables:
+The following table with five tuples and four variables will be used as an example for the sequel of this part.
 
-+-------------+------+------+------+------+
-| Tuple index | X[0] | X[1] | X[2] | X[3] |
-+=============+======+======+======+======+
-|           1 |    0 |    1 |    2 |    3 |
-+-------------+------+------+------+------+
-|           2 |    0 |    0 |    3 |    2 |
-+-------------+------+------+------+------+
-|           3 |    2 |    1 |    0 |    3 |
-+-------------+------+------+------+------+
-|           4 |    3 |    2 |    1 |    2 |
-+-------------+------+------+------+------+
-|           5 |    3 |    0 |    1 |    1 |
-+-------------+------+------+------+------+
+.. list-table::
+    :widths: auto
+    :header-rows: 1
+    :stub-columns: 1
 
-In this particular example, the assignment `X={2, 1, 0, 3}` is then valid, but not `X={4, 3, 3, 3}` as there are no
-such line in the table.
+    * - Tuple index
+      - `X[0]`
+      - `X[1]`
+      - `X[2]`
+      - `X[3]`
+    * - 1
+      - `0`
+      - `1`
+      - `2`
+      - `3`
+    * - 2
+      - `0`
+      - `0`
+      - `3`
+      - `2`
+    * - 3
+      - `2`
+      - `1`
+      - `0`
+      - `3`
+    * - 4
+      - `3`
+      - `2`
+      - `1`
+      - `2`
+    * - 5
+      - `3`
+      - `0`
+      - `1`
+      - `1`
 
-Many algorithms exists to filter table constraints.
 
-One of the fastest filtering algorithm nowadays is Compact Table (CT) [CT2016]_.
+In this particular example, the assignment `X = {2, 1, 0, 3}` is valid, but not `X = {4, 3, 3, 3}` as there is no
+such row in the table.
+
+Many algorithms exist for filtering table constraints.
+
+One of the fastest filtering algorithms nowadays is Compact Table (CT) [CT2016]_.
 In this exercise you'll implement a simple version of CT.
 
 CT works in two steps:
 
-1. Compute the list of supported tuples. A tuple `T[i]` is supported if, *for each* element `j` of the tuple,
-  the domain of the variable `X[j]` contains the value `T[i][j]`.
-2. Filter the domains. For each variable `x[j]` and value `v` in its
-  domain, the value `v` can be removed if it's not used by any supported tuple.
+1. Compute the list of supported tuples. A tuple `T[i]` is supported if, *for each* index `j` of the tuple, the
+   domain of the variable `X[j]` contains the value `T[i][j]`.
+2. Filter the domains. For each variable `X[j]` and value `v` in the domain of `X[j]`, `v` can be removed if it is not
+   used by any supported tuple.
 
 
-Your task is to terminate the implementation in
+Your task is to finish the implementation in
 `TableCT.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/TableCT.java?at=master>`_.
 
 
-`TableCT` maintains for each pair
-variable/value the set of tuples the pair maintains as an array of bitsets:
+`TableCT` maintains for each variable-value pair an array of bitsets:
 
 .. code-block:: java
 
     private BitSet[][] supports;
 
 
-where `supports[j][v]` is
-the (bit)set of supported tuples for the assignment `x[j]=v`.
+where `supports[j][v]` is the (bit)set containing the supported tuple indices for the assignment `X[j]=v`.
 
 Example
 -------
 
-As an example, consider that variable `x[0]` has domain `{0, 1, 3}`. Here are some values for `supports`:
-`supports[0][0] = {1, 2}`
-`supports[0][1] = {}`
-`supports[0][3] = {4,5}`
+Given the previous example where `X[0]` has the domain `{0, 1, 3}`, some of the the values of `supports` are:
+`supports[0][0] = {1, 2}`,
+`supports[0][1] = {}`, and
+`supports[0][3] = {4,5}`.
 
-We can infer two things from this example: first, value `1` does not support any tuples, so it can be removed safely
-from the domain of `x[0]`. Moreover, the tuples supported by `x[0]` is the union of the tuples supported by its values;
-we immediately see that tuple `3` is not supported by `x[0]` and can be discarded from further calculations.
+From this we can infer two things. First, the value `1` does not support any tuple indices, so it can be removed
+from the domain of `X[0]`. Additionally, given the union over all tuple indices supported by values in the domain of
+`X[0]`, the tuple index `3` is not supported by any value in the domain of `X[0]`: the tuple index 3 can be removed
+from all bitsets in `supports`.
 
-If we push the example further, and we say that variable `x[2]` has domain `{0, 1}`, we immediately see that tuples `1`
-and `2` are not supported by variable `x[2]`, and, as such, can be discarded. From this, we can infer that the value
-`0` can be removed from variable `x[0]` as they don't support any tuple anymore.
+Continuing with the same example and where `X[2]` has the domain `{0, 1}`, we see that tuples with indices `1`
+and `2` are not supported by any value in the domain of `X[2]`; the tuples with indices `1` and `2` can therefore
+be removed from all bitsets in `supports`. From this, we can infer that the value
+`0` can be removed from the domain of variable `X[0]` as the tuple indices the value supported are no longer supported
+by a variable (namely `X[2]`).
 
 
 Using bit sets
 --------------
 
 You may have assumed that the type of `supports` would have been `List<Integer>[][] supportedByVarVal`.
-This is not the solution used by CT.
+This is not the approach used by CT.
 
 CT uses the concept of bit sets. A bit set is an array-like data structure that stores bits. Each bit is accessible by
-its index. A bitset is in fact composed of an array of `Long`, that we call in this context a *word*.
-Each of these words store 64 bits from the bitset.
+its index. A bitset is in fact composed of an array of `Long`, which we in this context refer to as a *word*.
+Each of these words stores 64 bits from the bitset.
 
-Using this structures is convenient for our goal:
+Using this structure is convenient for our goal:
 
-* Each supported tuple is encoded as a `1` in the bitset. `0` encodes unsupported tuples. In the traditional list/array
-  representation, each supported tuple would have taken 32 bits to be represented.
-* Doing intersection and union of bit sets (and these are the main operation that will be made on `supportedByVarVal`)
+* The tuple with tuple index `i` becomes the `i`:th bit of the bitset and is encoded as a `1` if the tuple is supported,
+  otherwise it is encoded as a `0`. In the traditional list/array
+  representation, each supported tuple requires 32 bits to be represented.
+* Computing the intersection and union of bit sets (and these are the main operations that will be made on `supportedByVarVal`)
   is very easy, thanks to the usage of bitwise operators included in all modern CPUs.
 
-Java provides a default implementation of bit sets in the class BitSet, that we will use in this exercise.
-We encourage you to read its documentation before going on.
+Java provides a default implementation of bit sets in the class BitSet, which we will use in this exercise.
+We encourage you to read its documentation before continuing.
 
 A basic implementation
 ----------------------
 
-You will implement a version of CT that makes no use of the reversible structure (therefore it is probably much less efficient that the real CT algo).
+You will implement a version of CT that makes no use of the stateful structure (therefore it is probably much less efficient that the real CT algorithm).
 
 You have to implement the `propagate()` method of the class `TableCT`. All class variables have already been initialized
 for you.
 
 You "simply" have to compute, for each call to `propagate()`:
 
-* The tuples supported by each variable, which are the union of the tuples supported by the value in the domain of the
-  variable
-* The intersection of the tuples supported by each variable is the set of globally supported tuples
-* You can now intersect the set of globally supported tuples with each variable/value pair in `supports`.
-  If the value supports no tuple (i.e. the intersection is empty) then it can be removed.
+* The tuples supported by each variable, which are the union of the tuples supported by the values in the domain of the
+  variable.
+* The intersection of the tuples supported by each variable. This intersection is the set of globally supported tuples.
+* You can now intersect the set of globally supported tuples with each variable-value pair in `supports`.
+  If the value supports no tuples (i.e., the intersection is empty), then the value can be removed.
 
-Make sure you pass all the tests `TableTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/TableTest.java?at=master>`_.
+Make sure your implementation passes all the tests `TableTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/TableTest.java?at=master>`_.
 
 
 
-.. [CT2016] Demeulenaere, J., Hartert, R., Lecoutre, C., Perez, G., Perron, L., Régin, J. C., & Schaus, P. (2016, September). Compact-table: Efficiently filtering table constraints with reversible sparse bit-sets. In International Conference on Principles and Practice of Constraint Programming (pp. 207-223). Springer.
+.. [CT2016] Demeulenaere, J., Hartert, R., Lecoutre, C., Perez, G., Perron, L., Régin, J. C., & Schaus, P. (2016). Compact-table: Efficiently filtering table constraints with reversible sparse bit-sets. In International Conference on Principles and Practice of Constraint Programming (pp. 207-223). Springer.
 
 Sequencer Combinator
 ======================
 
-Sometimes we wish to branch on a given order on two families of variables, say `x[]` and then `y[]` as show on the next picture.
+Sometimes we wish to branch in a given order on two families of variables, say `x[]` and then `y[]`, as shown in the next picture.
 A variable in `y` should not be branched on before all the variables in `x` have been decided.
-Furthermore, we may want to apply a specific heuristic on `x` which is different from the heuristic we want to apply on `y` variables.
+Furthermore, we may want to apply a specific heuristic on `x` which is different from the heuristic we want to apply on `y`:
 
 
-.. image:: _static/combinator.svg
+.. image:: ../_static/combinator.svg
     :scale: 50
     :width: 200
     :alt: combinator
+    :align: center
 
-This can be achieved as follows
+This can be achieved as follows:
 
 .. code-block:: java
 
@@ -602,15 +651,15 @@ Eternity Problem
 
 Fill in all the gaps in order to solve the Eternity II problem.
 
-Your task is to terminate the implementation in
-`Eternity.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/Eternity.java?at=master>`_.
+Your task is to finish the implementation in
+`Eternity.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/Eternity.java?at=master>`_:
 
-* Create the table 
-* Model the problem using table constraints
-* Search for a feasible solution using branching combinators
+* Create the table.
+* Model the problem using table constraints.
+* Search for a feasible solution using branching combinators.
 
 
-Element constraint with array of variables
+Element constraint with an array of variables
 ==================================================
 
 Implement `Element1DVar.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Element1DVar.java?at=master>`_
@@ -630,12 +679,12 @@ Two directions of implementation are
 Check that your implementation passes the tests `Element1DVarTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/Element1DVarTest.java?at=master>`_
 Those tests are not checking that the filtering is domain-consistent. Write additional tests to check the domain consistency.
 
-The stable mariage problem
+The stable matching problem
 ===========================
 
-Complete the partial model `StableMariage.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/StableMariage.java?at=master>`_
+Complete the partial model `StableMatching.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/examples/StableMatching.java?at=master>`_.
 This model makes use of the `Element1DVar` constraint you have just implemented and is also a good example of manipulation of logical and reified constraints.
-Check that you discover the 6 solutions.
+Ensure that your implementation discovers all 6 solutions to the provided instance.
 
 The absolute value constraint
 ==============================
@@ -643,40 +692,40 @@ The absolute value constraint
 Implement `Absolute.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Absolute.java?at=master>`_
 
 
-Again you will realize that several directions of implementation are possible
+Again you will realize that several directions of implementation are possible:
 
-1. The full domain consistent version
-2. An hybrid domain-bound consistent one
+1. The full domain-consistent version (use the `fillArray` method to iterate over domains)
+2. A hybrid domain-bound consistent one
 
 
-Check that your implementation passes the tests `AbsoluteTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/AbsoluteTest.java?at=master>`_
+Check that your implementation passes the tests `AbsoluteTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/AbsoluteTest.java?at=master>`_.
 
 
 The maximum constraint
 ==============================
 
-Implement `Maximum.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Maximum.java?at=master>`_
+Implement `Maximum.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Maximum.java?at=master>`_.
 
 
-Implement a bound-consistent filtering algorithm
+Implement a bound-consistent filtering algorithm.
 
 
-Check that your implementation passes the tests `MaximumTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/MaximumTest.java?at=master>`_
+Check that your implementation passes the tests `MaximumTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/MaximumTest.java?at=master>`_.
 
 
 Compact table algorithm for table constraints with short tuples
 ==================================================================
 
-Implement `ShortTableCT.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/ShortTableCT.java?at=master>`_
+Implement `ShortTableCT.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/ShortTableCT.java?at=master>`_.
 
 
-Of course you should get a strong inspiration from the 
+Of course you should get strong inspiration from the
 `TableCT.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/TableCT.java?at=master>`_
 implementation you did in a previous exercise.
 
 
 
-Check that your implementation passes the tests `ShortTableTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/ShortTableTest.java?at=master>`_
+Check that your implementation passes the tests `ShortTableTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/ShortTableTest.java?at=master>`_.
 
 
 Compact table algorithm for negative table constraints
@@ -704,58 +753,58 @@ It has the following signature:
 
     public Cumulative(IntVar[] start, int[] duration, int[] demand, int capa)
 
-where `capa` is the capacity of the resource and `start`, `duration`, and `demand` are arrays of the same size and represents
-properties of activities:
+where `capa` is the capacity of the resource and `start`, `duration`, and `demand` are arrays of equal size representing
+the following properties of the activities:
 
-* `start[i]` is the variable specifying the start time of activity `i`
-* `duration[i]` is the duration of activity `i`
-* `demand[i]` is the resource consumption or demand of activity `i`
-
-
+* `start[i]` is the variable specifying the start time of activity `i`,
+* `duration[i]` is the duration of activity `i`, and
+* `demand[i]` is the resource consumption or demand of activity `i`.
 
 
-The constraint ensures that the cumulative consumption of activities (also called consumption profile)
-at any time is below a given capacity:
+
+
+The constraint ensures that the cumulative consumption of activities (also called the consumption profile)
+never exceeds the capacity:
 
 .. math:: \forall t: \sum_{i \mid t \in \left [start[i]..start[i]+duration[i]-1 \right ]} demand[i] \le capa
 
 
 
-The next visual example depicts three activities and their corresponding
-consumption profile. As it can be observed, the profile never exceeds
-the capacity 4.
+The following example depicts three activities and their corresponding
+consumption profile. As can be observed, the profile never exceeds
+the capacity 4:
 
 
-.. image:: _static/scheduling.svg
+.. image:: ../_static/scheduling.svg
     :scale: 50
     :width: 400
     :alt: scheduling cumulative
+    :align: center
 
-
-It corresponds to the instantiation of the Cumulative constraint:
+It corresponds to the instantiation of the following `Cumulative` constraint:
 
 .. code-block:: java
 
-    Cumulative(start = [ 1, 2, 3], duration = [8, 3, 3], demand = [1, 2, 2], capa = 4)
+    Cumulative(start = [1, 2, 3], duration = [8, 3, 3], demand = [1, 2, 2], capa = 4)
 
 
 
-Implement `CumulativeDecomp.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/CumulativeDecomp.java?at=master>`_.
-This is a decomposition or reformulation of the cumulative constraint
+Implement `CumulativeDecomposition.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/CumulativeDecomposition.java?at=master>`_.
+This is a decomposition or reformulation of the `Cumulative` constraint
 in terms of simple arithmetic and logical constraints as
-used in the above equation to describe its semantic.
+used in the equation above to describe its semantics.
 
 
-At any time `t` of the horizon a `BoolVar overlaps[i]`
-tells whether activity `i` overlaps time `t` or not.
-Then the overall consumption in `t` is obtained by:
+At any point in time `t` the `BoolVar overlaps[i]`
+designates whether activity `i` overlaps, potentially being performed at, `t` or not.
+The overall consumption at `t` can then be obtained by:
 
-.. math:: \sum_{i} overlaps[i]*demand[i] \le capa
+.. math:: \sum_{i} overlaps[i] \cdot demand[i] \le capa
 
 
-First make sure you understand the following code, then
-add the few lines in the `TODO` to make
-sure `overlaps` has the intended meaning.
+First make sure you understand the following code, and then
+add the few lines in its `TODO` task in order to make
+sure `overlaps` has the intended meaning:
 
 
 
@@ -795,57 +844,58 @@ Check that your implementation passes the tests `CumulativeDecompTest.java <http
 Cumulative Constraint: Time-Table filtering
 ==============================================
 
-The Cumulative and Time-Table Filtering introduced in  [TT2015]_
-is an efficient yet simple filtering for Cumulative.
+The Time-Table Filtering introduced in  [TT2015]_
+is an efficient yet simple filtering for `Cumulative`.
 
-It is a two stage algorithm:
+It is a two-stage algorithm:
 
-1. Build an optimistic profile of the resource consumption and check it does not exceed the capacity.
+1. Build an optimistic profile of the resource consumption and check that it does not exceed the capacity.
 2. Filter the earliest start of the activities such that they are not in conflict with the profile.
 
-Consider on the next example the depicted activity that can be executed anywhere between
-the two brackets.
-It can not execute at its earliest start since this would
+Consider in the next example the depicted activity that can be executed anywhere between
+the two solid brackets.
+It cannot execute at its earliest start since this would
 violate the capacity of the resource.
-We thus need to push the activity up until we find a time
+We thus need to postpone the activity until a point in time
 where it can execute over its entire duration
 without being in conflict with the profile and the capacity.
-The earliest time  is 7.
+The earliest point in time is 7:
 
 
-.. image:: _static/timetable2.svg
+.. image:: ../_static/timetable2.svg
     :scale: 50
     :width: 600
     :alt: scheduling timetable1
-
+    :align: center
 
 **Profiles**
 
 
 We provide a class `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_
-that is able to build efficiently a resource profile given an array of rectangles in input.
-A rectangle has three attributes: `start`, `end`, `height` as shown next:
+that is able to efficiently build a resource profile given an array of rectangles as input.
+A rectangle has three attributes: `start`, `end`, and `height`, as shown next:
 
-.. image:: _static/rectangle.svg
+.. image:: ../_static/rectangle.svg
     :scale: 50
     :width: 250
     :alt: rectangle
+    :align: center
 
-A profile is nothing else than a sequence of rectangles.
-An example of profile is given next. It is built from three input rectangles provided to the constructor
-of `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_.
-The profile consists in 7 contiguous rectangles.
-The first rectangle `R0` starts at `Integer.MIN_VALUE` with a height of zero
-and the last rectangle `R6` ends in `Integer.MAX_VALUE` also with a height of zero.
-These two `dummy` rectangles are convenient because they guarantee
-the property that any time point falls on one rectangle of the profile.
+A profile is nothing more but a sequence of rectangles.
+An example profile is given next. It is built from three input rectangles provided to the constructor of `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_.
+
+The profile consists of 7 contiguous rectangles.
+The first rectangle, `R0`, starts at `Integer.MIN_VALUE` with a height of zero,
+and the last rectangle, `R6`, ends at `Integer.MAX_VALUE`, also with a height of zero.
+These two dummy rectangles are convenient because they guarantee
+that there exists a rectangle in the profile for any point in time:
 
 
-.. image:: _static/profile.svg
+.. image:: ../_static/profile.svg
     :scale: 50
     :width: 650
     :alt: profile
-
+    :align: center
 
 Make sure you understand how to build and manipulate
 `Profile.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Profile.java?at=master>`_.
@@ -867,24 +917,25 @@ You have three TODO tasks:
 
 *TODO 1* is to build the optimistic profile
 from the mandatory parts of the activities.
-As can be seen on the next visual example, a mandatory part of an activity
-is a part that is always executed whatever will be the start time of the activity
-on its current domain.
-It is the rectangle starting at `start[i].getMax()` that ends in `start[i].getMin()+duration()`
+As can be seen in the next example, the mandatory part of an activity
+is a part that is always executed whatever the start time of the activity
+will be in its current domain.
+It is the rectangle starting at `start[i].getMax()` that ends in `start[i].getMin()+duration[i]`
 with a height equal to the demand of the activity.
-Be careful because not every activity has a mandatory part.
+Be careful because not every activity has a mandatory part:
 
-.. image:: _static/timetable1.svg
+.. image:: ../_static/timetable1.svg
     :scale: 50
     :width: 600
     :alt: scheduling timetable1
+    :align: center
 
 *TODO 2* is to check that the profile is not exceeding the capacity.
-You can check that each rectangle of the profile is not exceeding the capacity
-otherwise you throw an `InconsitencyException`.
+You can check that each rectangle of the profile is not exceeding the capacity;
+otherwise you throw an `InconsistencyException`.
 
-*TODO 3* is to filter the earliest start of unbound activities by pushing each
-activity (if needed) to the earliest slot when it can be executed without violating the capacity threshold.
+*TODO 3* is to filter the earliest start of unbound activities by postponing each
+activity (if needed) to the earliest slot when it can be executed without exceeding the capacity.
 
 
 .. code-block:: java
@@ -893,13 +944,14 @@ activity (if needed) to the earliest slot when it can be executed without violat
             if (!start[i].isBound()) {
                 // j is the index of the profile rectangle overlapping t
                 int j = profile.rectangleIndex(start[i].getMin());
-                // TODO 3: push i to the right
+                // TODO 3: postpone i to a later point in time
                 // hint:
-                // You need to check that at every-point on the interval
-                // [start[i].getMin() ... start[i].getMin()+duration[i]-1] there is enough space.
-                // You may have to look-ahead on the next profile rectangle(s)
-                // Be careful that the activity you are currently pushing may have contributed to the profile.
-
+                // Check that at every point in the interval
+                // [start[i].getMin() ... start[i].getMin()+duration[i]-1]
+                // there is enough remaining capacity.
+                // You may also have to check the following profile rectangle(s).
+                // Note that the activity you are currently postponing
+                // may have contributed to the profile.
             }
         }
 
@@ -927,9 +979,9 @@ Your task is to terminate the implementation in
 * Add instructions to minimize the makespan
 * Minimize the makespan
 
-Several instance of increasing sizes are available with 30,60,90 and 120 activities.
+Several instances of increasing size are available with 30, 60, 90, and 120 activities.
 In order to test your model, the instance ``j30_1_1.rcp`` should have a minimum makespan of 43.
-Don't expect to prove optimality for large size instances but you should reach it easily for 30 activities.
+Don't expect to prove optimality for large-size instances, but you should reach it easily for 30 activities.
 
 
 
@@ -980,7 +1032,7 @@ A reminder about the watched literals technique:
 * The two unbound variables
   should be at indexes `wL` (watched left) and `wR` (watched right).
   As depicted below `wL` (`wR`) is the left (right) most unbound variable.
-* Those indices are store in `ReversibleInt` such that they can only increase during search (incrementality).
+* Those indices are store in `StateInt` such that they can only increase during search (incrementality).
 * When `propagate` is called, it means that one of the two watched variable is bound (`x[wL] or x[wR]`) and
   consequently the two pointers must be updated.
 * If during the update a variable bound to `true` is detected, the constraint can be deactivated since it will always be satisfied.
@@ -990,6 +1042,7 @@ A reminder about the watched literals technique:
     :scale: 50
     :width: 600
     :alt: watched literals
+    :align: center
 
 
 The logical reified or constraint
@@ -1030,40 +1083,49 @@ that will gradually improve the performance for solving this problem optimally.
 
 
 
-GAC filtering for the AllDifferent Constraint
+Domain-Consistent filtering for the AllDifferent Constraint
 ======================================================================================
 
-The objective here is to implement the filtering algorithm described in  [REGIN94]_
-to remove every impossible value for the `AllDifferent` constraint (Arc-Consistency).
-More precisely you must:
+The objective is to implement the filtering algorithm described in  [REGIN94]_
+to remove every impossible value for the `AllDifferent` constraint (this is called generalized arc consistency and is also known as domain consistency).
+More precisely, you must:
 
-* Implement the constraint `AllDifferentAC.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/AllDifferentAC.java?at=master>`_.
-* Test your implementation in `AllDifferentACTest.java. <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/AllDifferentACTest.java?at=master>`_
+* Implement the constraint `AllDifferentDC.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/AllDifferentDC.java?at=master>`_.
+* Test your implementation in `AllDifferentDCTest.java. <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/engine/constraints/AllDifferentDCTest.java?at=master>`_
 
 
-Régin's algorithm proceeds in four steps described in the following figure.
+Régin's algorithm is a four-step procedure that can be described with the following figure:
 
-.. image:: _static/alldifferent.png
+.. image:: ../_static/alldifferent.png
     :scale: 70
     :alt: profile
+    :align: center
 
-1. It computes an initial maximum matching in the variable value graph for the consistency test.
-2. It build an oriented graph. Matched edges from right to left, un matched edge from left to right. There is also one dummy node
-   with in-comming edges from unmatched value nodes, and out-going edges toward matched value nodes.
-3. It computes strongly connected components.
-4. Any edge that is not in the initial maximum matching and connects two nodes from different components is removed.
+The four steps are:
 
-The two main algorithmic building blocks are provided.
+1. Computing an initial maximum matching in the variable-value graph for the consistency test (matched edges and value
+   nodes are coloured blue in the figure).
+2. Building a directed graph: each matched edge becomes a (directed) arc originating from the variable node and terminating in the
+   value node, and each unmatched edge becomes a (directed) arc originating from the value node and terminating in the
+   variable node. Additionally, a dummy node is added
+   that has an incoming arc from each unmatched value node, and an outgoing arc to each matched value node.
+3. Computing the strongly connected components (SCCs). Note that for this step, the number of each node in the figure
+   corresponds to their SCC rather than their index or value for variable and value nodes respectively.
+4. Any arc that was not a matched edge and that connects two nodes from different components is
+   removed. Note that for this step the number of each node in the figure once again corresponds to their index or value
+   for variable and value nodes respectively.
+
+The two main algorithmic building blocks are provided:
 
 * `MaximumMatching.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/MaximumMatching.java?at=master>`_
-  is a class that computes a maximum matching given an array of variables. Instantiate this class once and for all in the constructor
-  then you should simply call `compute` in the `propagate` method.
+  is a class that computes a maximum matching given an array of variables. Instantiate this class once in the constructor
+  of `AllDifferentDC` and then call `compute` in the `propagate` method.
 * `GraphUtil.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/util/GraphUtil.java?at=master>`_
-  contains a static method with signature `public static int[] stronglyConnectedComponents(Graph graph)` to compute strongly connected
-  components. The returned array gives from each node, the connected component id.
+  contains a static method with signature `public static int[] stronglyConnectedComponents(Graph graph)` to compute the strongly connected
+  components. The returned array gives for each node its connected component id.
 
-One of the main difficulty of this exercise is to implement the `Graph` interface
-to represent the residual graph of the maximum matching.
+One of the main difficulties of this exercise is to implement the `Graph` interface
+to represent the residual graph of the maximum matching:
 
 .. code-block:: java
 
@@ -1083,32 +1145,33 @@ We advise you to use a dense representation with node ids as illustrated on the 
 
 
 Once your code passes the tests, you can experiment your new constraint on all the models you have seen so far
-to measure the pruning gain on the number of nodes (NQueens, Eternity, TSP, QAP, etc).
+to measure the pruning gain on the number of nodes (NQueens, TSP, QAP, etc).
 
-.. [REGIN94] Régin, J.-C. (1994). A filtering algorithm for constraints of difference in CSPs, AAAI-94
+.. [REGIN94] Régin, J.-C. (1994). A filtering algorithm for constraints of difference in CSPs, AAAI-94.
 
 
 
-Discrepancy Limited Search (optional)
+Limited Discrepancy Search (optional)
 =================================================================
 
-Implement ``LimitedDiscrepancyBranching``, a branching that can wrap any branching
+Implement `LimitedDiscrepancyBranching`, a branching that can wrap any branching
 to limit the discrepancy of the branching.
 
 Test your implementation in `LimitedDiscrepancyBranchingTest.java. <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/search/LimitedDiscrepancyBranchingTest.java?at=master>`_
 
 
-Conflict based search strategy
+Conflict-based Search Strategy
 =================================================================
 
 
-Last Conflict [LC2009]_
-Conflict Ordering Search [COS2015]_
+Implement the Conflict Ordering Search [COS2015]_ and Last Conflict [LC2009]_ heuristics.
 
+Test your implementation in `LastConflictSearchTest.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/search/LastConflictSearchTest.java?at=master>`_
+and `ConflictOrderingSearchTest.java. <https://bitbucket.org/minicp/minicp/src/HEAD/src/test/java/minicp/search/ConflictOrderingSearchTest.java?at=master>`_.
 
-.. [LC2009] Lecoutre, C., Saïs, L., Tabary, S., & Vidal, V. (2009). Reasoning from last conflict (s) in constraint programming. Artificial Intelligence, 173(18), 1592-1614.
+.. [LC2009] Lecoutre, C., Saïs, L., Tabary, S., & Vidal, V. (2009). Reasoning from last conflict(s) in constraint programming. Artificial Intelligence, 173(18), 1592-1614.
 
-.. [COS2015] Gay, S., Hartert, R., Lecoutre, C., & Schaus, P. (2015). Conflict ordering search for scheduling problems. In International conference on principles and practice of constraint programming (pp. 140-148). Springer.
+.. [COS2015] Gay, S., Hartert, R., Lecoutre, C., & Schaus, P. (2015). Conflict ordering search for scheduling problems. International Conference on Principles and Practice of Constraint Programming, pp. 140-148. Springer.
 
 
 Restarts (optional)
@@ -1120,8 +1183,11 @@ TODO
 AllDifferent Forward Checking (optional)
 =========================================
 
-Implement a dedicated algorithm for the all-different.
-Whenever a variable is bound to a value, this value is removed from the domain of other variables.
+Implement a dedicated propagator `AllDifferentFW.java` for the all-different constraint that does the same filtering
+as `AllDifferentACBinary.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/AllDifferentBinary.java?at=master>`_,
+but avoid iteration over bound variables when removing a value.
+Implement the sparse-set trick, as in `Sum.java <https://bitbucket.org/minicp/minicp/src/HEAD/src/main/java/minicp/engine/constraints/Sum.java?at=master>`_.
+Experiment with the 15-Queens problem instance. How much speed-up do you observe for finding all the solutions?
 
 
 
