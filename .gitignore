@@ -26,6 +26,9 @@
 hs_err_pid*
 Mini-CPBP/minicp/.idea
 .idea/
+*.iml
+*.mf
+Mini-CPBP/minicp/target
 
 venv
 RL-Tuner/.idea/
