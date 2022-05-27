@@ -869,6 +869,33 @@ public final class Factory {
 
     /**
      * Returns a variable representing
+     * the value in an array at the position
+     * specified by the given index variable
+     * As opposed to the function above, the constraint is implemented using {@link TableCT} constraint
+     * to compute the marginals
+     *
+     * @param array the array of values
+     * @param y     the variable
+     * @return a variable equal to {@code array[y]}
+     */
+    public static IntVar elementWithBP(int[] array, IntVar y) {
+        Solver cp = y.getSolver();
+        IntVar z = makeIntVar(cp, IntStream.of(array).min().getAsInt(), IntStream.of(array).max().getAsInt());
+
+        // Each line in the table is a way that y could refer to array[y]
+        int [][] table = new int [array.length][2];
+        for (int i = 0; i < table.length; i++) {
+            table[i][0] = i;
+            table[i][1] = array[i];
+        }
+
+        // TableCT shows that the pair {y, z} must correspond to a line in table
+        cp.post(new TableCT(new IntVar[]{y,z},table));
+        return z;
+    }
+
+    /**
+     * Returns a variable representing
      * the value in a matrix at the position
      * specified by the two given row and column index variables
      * This relation is enforced by the {@link Element2D} constraint
