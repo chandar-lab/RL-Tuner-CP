@@ -28,7 +28,7 @@ import tensorflow.compat.v1 as tf
 LSTM_STATE_NAME = 'lstm'
 
 # Number of output note classes. This is a property of the dataset.
-NUM_CLASSES = 38
+NUM_CLASSES = 29
 
 # Default batch size.
 BATCH_SIZE = 128
