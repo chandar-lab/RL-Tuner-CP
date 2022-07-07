@@ -16,6 +16,7 @@
 
 import numpy as np
 import tensorflow.compat.v1 as tf
+import rl_tuner_ops
 from tqdm import tqdm
 
 
@@ -65,23 +66,31 @@ def compute_constraint_percent_counterpoint(stat_dict):
   Args:
     stat_dict: The current statistics
   """
-  stat_dict['naturalNotesPercent'] = max(0, 1 - (stat_dict['naturalNotes'] / stat_dict['total_notes']))
-  stat_dict['intervalsPercent'] = max(0,1 - (stat_dict['intervals'] / stat_dict['total_intervals']))
-  stat_dict['tritonOutlinesPercent'] = max(0,1 - (stat_dict['tritonOutlines'] / stat_dict['total_intervals']))
-  stat_dict['tonicEndsPercent'] = max(0,1 - (stat_dict['tonicEnds'] / stat_dict['num_compositions']))
-  stat_dict['stepwiseDescentToFinalPercent'] = max(0,1 - (stat_dict['stepwiseDescentToFinal'] / stat_dict['num_compositions']))
-  stat_dict['noRepeatPercent'] = max(0,1 - (stat_dict['noRepeat'] / stat_dict['total_intervals']))
-  stat_dict['coverModalRangePercent'] = max(0,1 - (stat_dict['coverModalRange'] / (stat_dict['num_compositions'] * 41)))
-  stat_dict['characteristicModalSkipsPercent'] = max(0, 1 - (stat_dict['characteristicModalSkips']/(stat_dict['num_compositions'] * 3)))
-  stat_dict['skipsStepsRatioPercent'] = max(0,1 - (stat_dict['skipsStepsRatio']/(stat_dict['num_compositions'] * 16)))
-  stat_dict['avoidSixthsPercent'] = max(0,1 - (stat_dict['avoidSixths']/stat_dict['total_intervals']))
-  stat_dict['skipStepsSequencePercent'] = max(0,1 - (stat_dict['skipStepsSequence']/(stat_dict['total_intervals'] * 4)))
-  stat_dict['bFlatPercent'] = max(0,1 - (stat_dict['bFlat']/stat_dict['total_intervals']))
+  stat_dict['naturalNotesPercent'] = stat_dict['naturalNotes'] / stat_dict['total_notes']
+  stat_dict['intervalsPercent'] = stat_dict['intervals'] / stat_dict['total_intervals']
+  stat_dict['tritonOutlinesPercent'] = stat_dict['tritonOutlines'] / stat_dict['total_intervals']
+  stat_dict['tonicEndsPercent'] = stat_dict['tonicEnds'] / stat_dict['num_compositions']
+  stat_dict['stepwiseDescentToFinalPercent'] = stat_dict['stepwiseDescentToFinal'] / stat_dict['num_compositions']
+  stat_dict['noRepeatPercent'] = stat_dict['noRepeat'] / stat_dict['total_intervals']
+  stat_dict['coverModalRangePercent'] = stat_dict['coverModalRange'] / (stat_dict['num_compositions'] * 41)
+  stat_dict['characteristicModalSkipsPercent'] = stat_dict['characteristicModalSkips']/(stat_dict['num_compositions'] * 3)
+  stat_dict['skipsStepsRatioPercent'] = stat_dict['skipsStepsRatio']/(stat_dict['num_compositions'] * 16)
+  stat_dict['avoidSixthsPercent'] = stat_dict['avoidSixths']/stat_dict['total_intervals']
+  stat_dict['skipStepsSequencePercent'] = stat_dict['skipStepsSequence']/(stat_dict['total_intervals'] * 4)
+  stat_dict['bFlatPercent'] = stat_dict['bFlat']/stat_dict['total_intervals']
+
+  # Convert stats to [0, 1] values
+  for key, val in stat_dict.items():
+    if key.endswith('Percent'):
+      stat_dict[key] = max(0, 1 - val)
+
   stat_dict['constraint_performance'] = stat_dict['naturalNotesPercent'] + stat_dict['intervalsPercent'] + stat_dict['tritonOutlinesPercent'] + \
                                         stat_dict['tonicEndsPercent'] + stat_dict['stepwiseDescentToFinalPercent'] + stat_dict['noRepeatPercent'] + \
                                         stat_dict['coverModalRangePercent'] + stat_dict['characteristicModalSkipsPercent'] + stat_dict['skipsStepsRatioPercent'] + \
                                         stat_dict['avoidSixthsPercent'] + stat_dict['skipStepsSequencePercent'] + stat_dict['bFlatPercent']
-  stat_dict['constraint_performance'] /= 12
+
+
+  stat_dict['constraint_performance'] /= rl_tuner_ops.NUM_CONSTRAINTS
   
 def compose_and_evaluate_piece_counterpoint(rl_tuner,
                                stat_dict,
@@ -102,7 +111,6 @@ def compose_and_evaluate_piece_counterpoint(rl_tuner,
   for _ in range(composition_length):
     action, new_observation, reward_scores = rl_tuner.action(
         last_observation,
-        0,
         enable_random=False,
         sample_next_obs=True)
 

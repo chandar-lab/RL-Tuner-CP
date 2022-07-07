@@ -40,6 +40,7 @@ MIN_NOTE = 48  # Inclusive
 MAX_NOTE = 84  # Exclusive
 TRANSPOSE_TO_KEY = 0  # C Major
 DEFAULT_QPM = 80.0
+NUM_CONSTRAINTS = 12
 
 # Music theory constants used in defining reward functions.
 # Note that action 2 = midi note 48.

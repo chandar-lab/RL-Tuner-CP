@@ -154,16 +154,8 @@ class RLTuner(object):
     self.cp_violations_path = './counterpoint_violations.jar'
     self.marginals_path = 'marginals.txt'
     self.violations_path = 'violations.txt'
-    mutex_path = 'mutex.txt'
-    while os.path.isfile(mutex_path):
-      pass
-        
-    with open(mutex_path, 'w') as f:
-      f.write('Hello World')
     self.marginals, self.violations = self.load_marginals()
-    
-    if os.path.isfile(mutex_path):
-      os.remove(mutex_path)
+
       
     self.graph = tf.Graph()
 
@@ -1028,14 +1020,6 @@ class RLTuner(object):
   def save_marginals(self):
       """Saves the marginals and the violations dictionary in the txt files.
       """
-
-      mutex_path = 'mutex.txt'
-      while os.path.isfile(mutex_path):
-          pass
-
-      with open(mutex_path, 'w') as f:
-          f.write('Hello World')
-
       print("Saving marginals")
       new_marginals, new_violations = self.load_marginals()
       final_marginals = {**self.marginals, **new_marginals}
@@ -1048,7 +1032,6 @@ class RLTuner(object):
           json.dump(final_violations, f2)
 
       print("The marginals and violations have been saved!")
-      os.remove(mutex_path)
       
   def get_counterpoint_marginals(self):
       """Obtains the precomputed marginals for the current composition
@@ -1078,7 +1061,7 @@ class RLTuner(object):
       marginals_array = list(map(float, marginals_string.split()))
       
       if marginals_array[chosen_note] > 0:
-        return np.zeros((12))
+        return np.zeros((rl_tuner_ops.NUM_CONSTRAINTS))
       
       notes.append(str(chosen_note))
       return self.compute_counterpoint_violations(notes)
