@@ -30,7 +30,6 @@ import os
 
 from magenta.common import sequence_example_lib
 import rl_tuner_ops
-from magenta.models.shared import events_rnn_graph
 from magenta.pipelines import melody_pipelines
 import note_seq
 from note_seq import midi_io
@@ -147,18 +146,13 @@ class NoteRNNLoader(object):
     for var in self.variables():
       inner_name = rl_tuner_ops.get_inner_scope(var.name)
       inner_name = rl_tuner_ops.trim_variable_postfixes(inner_name)
+      inner_name = inner_name.replace("lstm_cell", "basic_lstm_cell")
       if '/Adam' in var.name:
         # TODO(lukaszkaiser): investigate the problem here and remove this hack.
         pass
       elif self.note_rnn_type == 'basic_rnn':
         var_dict[inner_name] = var
       else:
-        if inner_name.startswith('rnn'):
-            if inner_name.endswith('bias'):
-                inner_name = "RNN/MultiRNNCell/Cell0/LSTMCell/B"
-            else:
-                inner_name = "RNN/MultiRNNCell/Cell0/LSTMCell/W_0"
-
         var_dict[self.checkpoint_scope + '/' + inner_name] = var
 
     return var_dict
@@ -173,11 +167,7 @@ class NoteRNNLoader(object):
         with tf.variable_scope(self.scope):
           # Make an LSTM cell with the number and size of layers specified in
           # hparams.
-          if self.note_rnn_type == 'basic_rnn':
-            self.cell = events_rnn_graph.make_rnn_cell(
-                self.hparams.rnn_layer_sizes)
-          else:
-            self.cell = rl_tuner_ops.make_rnn_cell(self.hparams.rnn_layer_sizes)
+          self.cell = rl_tuner_ops.make_rnn_cell(self.hparams.rnn_layer_sizes)
           # Shape of melody_sequence is batch size, melody length, number of
           # output note actions.
           self.melody_sequence = tf.placeholder(tf.float32,

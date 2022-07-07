@@ -28,7 +28,7 @@ import tensorflow.compat.v1 as tf
 LSTM_STATE_NAME = 'lstm'
 
 # Number of output note classes. This is a property of the dataset.
-NUM_CLASSES = 38
+NUM_CLASSES = 29
 
 # Default batch size.
 BATCH_SIZE = 128
@@ -40,6 +40,7 @@ MIN_NOTE = 48  # Inclusive
 MAX_NOTE = 84  # Exclusive
 TRANSPOSE_TO_KEY = 0  # C Major
 DEFAULT_QPM = 80.0
+NUM_CONSTRAINTS = 12
 
 # Music theory constants used in defining reward functions.
 # Note that action 2 = midi note 48.
