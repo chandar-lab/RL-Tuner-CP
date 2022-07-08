@@ -33,3 +33,4 @@ Mini-CPBP/minicp/target
 venv
 RL-Tuner/.idea/
 RL-Tuner/__pycache__/
+RL-Tuner/wandb
