@@ -636,7 +636,7 @@ class RLTuner(object):
       new_state = np.array(self.q_network.state_value).flatten()
       new_reward_state = np.array(self.reward_rnn.state_value).flatten()
 
-      reward = self.collect_reward(last_observation, new_observation,
+      reward = self.collect_reward(new_observation,
                                    reward_scores)
 
       self.store(last_observation, state, action, reward, new_observation,
