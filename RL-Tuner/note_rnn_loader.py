@@ -148,7 +148,6 @@ class NoteRNNLoader(object):
       inner_name = rl_tuner_ops.trim_variable_postfixes(inner_name)
       inner_name = inner_name.replace("lstm_cell", "basic_lstm_cell")
       if '/Adam' in var.name:
-        # TODO(lukaszkaiser): investigate the problem here and remove this hack.
         pass
       elif self.note_rnn_type == 'basic_rnn':
         var_dict[inner_name] = var

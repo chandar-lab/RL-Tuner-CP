@@ -67,7 +67,6 @@ public class NQueens_UniformSampling {
 
    	SearchStatistics stats = search.solve();
 
-//  	System.out.format("#Solutions: %s\n", stats.numberOfSolutions());
  	System.out.format("Statistics: %s\n", stats);
 
     }

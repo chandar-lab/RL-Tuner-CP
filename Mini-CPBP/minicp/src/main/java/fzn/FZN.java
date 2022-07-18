@@ -226,13 +226,13 @@ public class FZN {
 			break;
 		case IE:
 			search = makeSearch(impactEntropy(m.getDecisionsVar()));
-			//optionnal initialisation of impacts
+			//optional initialisation of impacts
 			if(FZN.initImpact)
 				search.initializeImpact(m.getDecisionsVar());
 			break;
 		case MIE:
 			search = makeDfs(minicp, minEntropyRegisterImpact(m.getDecisionsVar()),impactEntropy(m.getDecisionsVar()));
-			//optionnal initialisation of impacts
+			//optional initialisation of impacts
 			if(FZN.initImpact)
 				search.initializeImpact(m.getDecisionsVar());
 			break;
@@ -266,14 +266,14 @@ public class FZN {
 		SearchStatistics stats;
 		//start the search
 		switch (m.getGoal()) {
-			//find a solution that maximize the cost function
+			//find a solution that maximizes the cost function
 			case ASTSolve.MAX:
 				stats = search.optimize(minicpbp.maximize(m.getObjective()),
 					ss -> {
 						return (System.currentTimeMillis() - t0 >= timeout * 1000 || foundSolution);
 					});
 				break;
-			//find a solution that minimize the cost function
+			//find a solution that minimizes the cost function
 			case ASTSolve.MIN:
 				stats = search.optimize(minicpbp.minimize(m.getObjective()),
 				ss -> {
@@ -296,12 +296,8 @@ public class FZN {
 				break;
 		}
 
-		//verify the solution (TODO)
-		//and print it
 		if (foundSolution) {
 			System.out.println("solution found");
-			//if (checkSolution)
-				//verifySolution();
 			printSolution(solFileStr);
 		} else
 			System.out.println("no solution was found");
@@ -329,7 +325,7 @@ public class FZN {
 	}
 
 	/**
-	 * Prints statistic about the search
+	 * Prints statistics about the search
 	 * @param stats statistics about the search
 	 * @param statsFileStr a path to save the stats 
 	 * @param runtime

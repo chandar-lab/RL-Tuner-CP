@@ -43,27 +43,17 @@ def main():
     mode = 'no hold'
     a_minor = True
 
-
     dataset = load_pickle_file('train_' + str(granularity) + '.pkl')
 
     all_voices = []
-    #all_voices.extend(dataset[0])
-    #all_voices.extend(dataset[1])
-    #all_voices.extend(dataset[2])
     all_voices.extend(dataset[3])
 
     dataset_valid = load_pickle_file('valid_' + str(granularity) + '.pkl')
 
-    #all_voices.extend(dataset_valid[0])
-    #all_voices.extend(dataset_valid[1])
-    #all_voices.extend(dataset_valid[2])
     all_voices.extend(dataset_valid[3])
 
     dataset_test = load_pickle_file('test_' + str(granularity) + '.pkl')
 
-    #all_voices.extend(dataset_test[0])
-    #all_voices.extend(dataset_test[1])
-    #all_voices.extend(dataset_test[2])
     all_voices.extend(dataset_test[3])
 
     print("Note sequences.")

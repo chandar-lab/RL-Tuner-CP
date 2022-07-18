@@ -3,7 +3,7 @@
 # README #
 
 * MiniCP-BP: Replacing classic propagation by belief propagation in MiniCPv1.0
-* Infos on MiniCP can be found <http://minicp.org>.
+* Info on MiniCP can be found <http://minicp.org>.
 * MiniCP-BP is a Java project built with Maven (<https://maven.apache.org>).
 
 
@@ -14,12 +14,12 @@ System Requirements
 
 * JDK:
  1.8 or above (this is to execute Maven; it still allows you to build against 1.3
- and prior JDKs).
+  and prior JDKs).
 * Memory:
  No minimum requirement.
 * Disk:
  Approximately 10MB is required for the Maven installation itself. Additional disk space will be used for your local Maven repository. The size
- of your local repository will vary depending on usage, but expect at least 500MB.
+  of your local repository will vary depending on usage, but expect at least 500MB.
 * Operating system: 
     * Windows: Windows 2000 or above.
     * Unix-based operating systems (Linux, Solaris, and macOS) and others: No minimum requirement.
@@ -94,14 +94,14 @@ Content
 
 ## Building MiniCPBP
 
-We build *MiniCPBP* using Maven. simply go to the MiniCPBP directory, and run the build command:
+We build *MiniCPBP* using Maven. Simply go to the MiniCPBP directory, and run the build command:
 
 ```
 $ cd MiniCPBP
 $  mvn install -Dmaven.test.skip=true
 ```
 
-The output of build process ends with lines like this, which indicates a successful build:
+The output of the build process ends with lines like this, which indicates a successful build:
 
 ```
 [INFO] ------------------------------------------------------------------------
@@ -116,13 +116,13 @@ The output of build process ends with lines like this, which indicates a success
 
 ## Running MiniCPBP
 
-Let's firts test the built code:
+Let's first test the built code:
 
 ```
 $ java -jar target/minicpbp-1.0.jar
 ```
 
-This should print the help message:
+This should print this help message:
 
 ```
 Missing required options: input, branching, search-type, timeout
@@ -238,7 +238,6 @@ The search statistics consist of these entries:
 - `failures`: the number of failures during the search
 - `nodes`: the number of search tree nodes explored during the search
 - `runtime (ms)`: time spent during the search (in milliseconds)
-
 
 
 

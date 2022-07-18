@@ -29,7 +29,6 @@ import java.io.IOException;
 public class FZParser {
 	public static Model readFlatZincModelFromFile(String fname, boolean acceptAnyCstr){
 		try{
-		//ANTLRInputStream input = new ANTLRInputStream(new FileInputStream(fname));
 		UnbufferedCharStream input = new UnbufferedCharStream(new FileInputStream(fname));
 		return readFlatZincModel(input, acceptAnyCstr);
 		}catch(IOException e){
@@ -44,9 +43,7 @@ public class FZParser {
 	}
 	public static Model readFlatZincModel(CharStream input, boolean acceptAnyCstr){
 		Model m = new Model(acceptAnyCstr);
-		//try{
 	        FlatzincLexer lex = new FlatzincLexer(input);
-			//CommonTokenStream tokens = new CommonTokenStream(lex);
 			lex.setTokenFactory(new CommonTokenFactory(true));
 			TokenStream tokens = new UnbufferedTokenStream<CommonToken>(lex);
 			FlatzincParser p = new FlatzincParser(tokens, m);
@@ -55,21 +52,15 @@ public class FZParser {
 			p.removeParseListeners();
 			p.removeErrorListeners();
 			//Handling errors
-			//p.addErrorListener(new DiagnosticErrorListener());
 			p.addErrorListener(new BaseErrorListener() {
               public void syntaxError(Recognizer<?, ?> recon, Object offendingSymbol, int line,
-                  int positionInLine, String message, RecognitionException e) { 
-            	  //System.out.println(offendingSymbol);
+                  int positionInLine, String message, RecognitionException e) {
                 throw new NotImplementedException("line "+line+":"+positionInLine+" "+message);
               }
               
             });
 			//The following try/catch and prediction modes implement this: https://theantlrguy.atlassian.net/wiki/pages/viewpage.action?pageId=1900591
 			p.getInterpreter().setPredictionMode(PredictionMode.SLL);
-			
-			//for debugging?
-			//p.addErrorListener(new DiagnosticErrorListener());
-			//p.getInterpreter().setPredictionMode(PredictionMode.LL_EXACT_AMBIG_DETECTION);
 
 	        try{
 	        	p.flatzinc_model();

@@ -119,8 +119,6 @@ public final class BranchingScheme {
         return sel;
     }
 
-    // TODO
-
     /**
      * Minimum selector with randomized tie-breaking.
      * <p>Example of usage.
@@ -163,7 +161,6 @@ public final class BranchingScheme {
         return sel;
     }
 
-    //TODO
     /**
      * Lexicographic strategy.
      * It selects the first variable with a domain larger than one.

@@ -109,7 +109,6 @@ def convert_to_range(melodies, mode):
             
             best_g = np.argmin(distances)
             
-            
             transpose = g[best_g]
                 
             offset = 0 if mode == 'melodic lines' else 1 if mode == 'no hold' else 2
@@ -224,7 +223,6 @@ def main():
     mode = 'no hold'
     a_minor = True
     
-    
     # MELODIC_LINES: No silence or hold, notes : 0 to 28, G = 0, A = 2, B = 4, C = 5, 29 classes
     # NOTE_SEQUENCES: Silence and hold, notes: 2 to 30, G = 2, A = 4, B = 6, C = 7, 31 classes
     # NO_HOLD: Silence, notes: 1 to 29, G = 1, A = 3, B = 5, C = 6, 30 classes
@@ -236,34 +234,23 @@ def main():
         dataset = pickle.load(file)
 
     all_voices = []
-    #all_voices.extend(dataset[0])
-    #all_voices.extend(dataset[1])
-    #all_voices.extend(dataset[2])
     all_voices.extend(dataset[3])
 
     if train:
         with open('valid_' + str(granularity) + '.pkl', 'rb') as file:
             dataset_valid = pickle.load(file)
-        
-        #all_voices.extend(dataset_valid[0])
-        #all_voices.extend(dataset_valid[1])
-        #all_voices.extend(dataset_valid[2])
+
         all_voices.extend(dataset_valid[3])
         
     random.seed(42)
     random.shuffle(all_voices)
-    #all_voices = all_voices[:1]
-    print(all_voices[0])
     print("Note sequences.")
     melodic_lines = extract_melodic_lines(all_voices)
-    print(melodic_lines[0])
     print("Transposition..")
     print(len(melodic_lines))
     melodic_lines = c_major(melodic_lines, a_minor)
-    print(melodic_lines[0])
     print("Range conversion...")
     melodic_lines = convert_to_range(melodic_lines, mode)
-    print(melodic_lines[0])
     
     if mode == 'melodic lines':
         note_sequences = melodic_lines

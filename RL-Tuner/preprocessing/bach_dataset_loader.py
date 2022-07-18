@@ -147,7 +147,7 @@ def compute_distance_note_voice(voice, note):
     # Bass: 34 to 48
 
     # Indicates the minimum value for each voice, maximum value without overlap (-1 if all values overlap with another voice), middle value
-    # Example: since bass is the lowest voice and tenor usually starts at 34, every note below 34 belows to the bass voice
+    # Example: since bass is the lowest voice and tenor usually starts at 34, every note below 34 belongs to the bass voice
     # Example no 2: tenor fully overlaps with bass and alto voices so we cannot say with certainty that a note belongs to the tenor voice
     important_notes = [[0, 33, (48 + 34)/2], [0, -1, (58 + 34)/2], [0, -1, (65 + 50)/2], [66, 100, (68 + 58)/2]] # bass, tenor, alto, soprano
     
@@ -180,7 +180,7 @@ def replace_held_notes(voice):
 def change_granularity(voice, factor):
     """Changes precision of the time information
               Args:
-                voice: Liste of notes in voice
+                voice: List of notes in voice
                 factor: Indicates how big the change is
               Returns:
                 New list of notes with specified granularity

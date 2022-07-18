@@ -6,11 +6,8 @@ import rl_tuner_ops
 import sys
 import wandb
 
-# Place to save your model checkpoints and composi|
-SAVE_PATH = "./Results"
-
 # Model parameter settings
-seed = int(sys.argv[1])
+seed = 1
 np.random.seed(seed)
 random.seed(seed)
 ALGORITHM = 'q'

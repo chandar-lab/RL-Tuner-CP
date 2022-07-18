@@ -117,7 +117,6 @@ public class LinIneqSystemModP extends AbstractConstraint {
 	for (int i=0; i<m; i++) {
 	    nDisjuncts *= Math.floorMod(b[i],p)+1;
 	}
-// 	System.out.println("nb of disjuncts: "+nDisjuncts);
 	nTuplesThreshold = Math.max(nTuplesThreshold,nDisjuncts); // to ensure that a table constraint is eventually posted
 	this.A = new int[m][nU+nDisjuncts]; // augmented coefficient matrix
 	int nConsec = nDisjuncts; // to fill disjuncts on rhs
@@ -147,13 +146,6 @@ public class LinIneqSystemModP extends AbstractConstraint {
 	    }
 	}
 
-	/* 
-   	System.out.println("before GJ Elim");
-  	for (int i=0; i<m; i++) {
-  	    System.out.println(Arrays.toString(this.A[i]));
-  	}
-	*/
-
 	// put A in reduced row echelon form
 	GaussJordanElimination(m,nU,nDisjuncts);
 
@@ -165,12 +157,6 @@ public class LinIneqSystemModP extends AbstractConstraint {
 	*/
 
 	// consider potential rows with all zero coefficients
-	// TODO remove disjuncts with nonzero rhs
-	/*
-	for (int i=nNonparam; i<m; i++)
-	    if (this.A[i][nU] != 0) // rhs must be zero as well in order for the system to be satisfiable
-		throw new InconsistencyException();
-	*/
 
 	tuple = new int[nU];
 	Tuples = new int[maxNbTuples][nU];
@@ -190,15 +176,6 @@ public class LinIneqSystemModP extends AbstractConstraint {
                 supports[i][j] = new BitSet();
         }
 
-/*
- 	System.out.print("\n nonparam vars: ");
-	for (int j=0; j<nNonparam; j++) {
-	    System.out.print(x[unBounds[j]].getName()+" ");
-	}
-	System.out.println();
-*/
-
-//    	setExactWCounting(true);
     }
 
     /**
@@ -356,8 +333,6 @@ public class LinIneqSystemModP extends AbstractConstraint {
   		x[unBounds[j]].propagateOnBind(this);
 	    }
      */
-	    // TODO? switch to domain events for all vars
-	    // TODO: map domain values to their canonical rep
 
 // 	    System.out.println("\n enumerating tuples:");
 // 	    System.out.println("posting Table with "+nU+" unbounds");
@@ -386,7 +361,6 @@ public class LinIneqSystemModP extends AbstractConstraint {
 	    }
 	}
 	// perform table filtering (borrowed from TableCT.propagate())
-// 	System.out.println("filtering...");
 	supportedTuples.set(0, nTuples); // set them all to true
 	if (supportedTuples.length() > nTuples)
 	    supportedTuples.clear(nTuples, supportedTuples.length()); // disregard tuples from former table
@@ -394,25 +368,20 @@ public class LinIneqSystemModP extends AbstractConstraint {
 	for (int i = 0; i < nU; i++) {
 	    supporti.clear(); // set them all to false
 	    int s = x[unBounds[i]].fillArray(domainValues);
-// 	    System.out.println("building supporti for "+x[unBounds[i]].getName());
 	    for (int j = 0; j < s; j++) {
-// 		System.out.println("val "+domainValues[j]+": "+Arrays.toString(supports[i][domainValues[j]-ofs[i]].stream().toArray()));
 		supporti.or(supports[i][domainValues[j]-ofs[i]]);
 	    }
 	    supportedTuples.and(supporti);
 	}
-// 	System.out.println("currently supported tuples are: "+Arrays.toString(supportedTuples.stream().toArray()));
 	if (supportedTuples.isEmpty())
 	    throw new InconsistencyException();	    
 	for (int i = 0; i < nU; i++) {
 	    int s = x[unBounds[i]].fillArray(domainValues);
-// 	    System.out.println("considering "+x[unBounds[i]].getName()+x[unBounds[i]].toString());
 	    for (int j = 0; j < s; j++) {
 		// The condition for removing the setValue v from x[i] is to check if
 		// there is no intersection between supportedTuples and the support[i][v]
 		int v = domainValues[j];
 		if (!supports[i][v-ofs[i]].intersects(supportedTuples)) {
-//  		    System.out.println("removing "+v+" for "+x[unBounds[i]].getName()+x[unBounds[i]].toString());
 		    x[unBounds[i]].remove(v);
 		}
 	    }

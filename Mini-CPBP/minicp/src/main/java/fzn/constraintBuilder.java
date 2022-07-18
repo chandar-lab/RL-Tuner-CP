@@ -98,18 +98,11 @@ public class constraintBuilder {
 
     public void makeBoolNot(BoolVar a, BoolVar b) {
         minicp.post(Factory.notEqual(a, b));
-    }    
-
-    public void makeBoolXor(BoolVar a, BoolVar b) {
-        throw new NotImplementedException();
     }
+
 
     public void makeArrayBoolOr(BoolVar[] as, BoolVar r) {
         minicp.post(Factory.isOr(r, as));
-    }
-
-    public void makeArrayBoolXor(BoolVar[] as, BoolVar r) {
-        throw new NotImplementedException();
     }
 
     public void makeArrayBoolAnd(BoolVar[] as, BoolVar r) {
@@ -154,10 +147,6 @@ public class constraintBuilder {
 
     public void makeArrayVarBoolElement(IntVar b, BoolVar[] as, BoolVar c) {
         minicp.post(Factory.element(as, b, c));
-    }
-
-    public void makeCount() {
-        throw new NotImplementedException();
     }
 
     public void makeAllDifferentInt(IntVar[] a) {

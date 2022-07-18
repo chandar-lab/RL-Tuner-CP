@@ -82,7 +82,6 @@ public class Circuit extends AbstractConstraint {
         int j = x[i].min();
         int origi = orig[i].value();
         int destj = dest[j].value();
-        // orig[i] *-> i -> j *-> dest[j]
         dest[origi].setValue(destj);
         orig[destj].setValue(origi);
         int length = lengthToDest[origi].value()
@@ -91,7 +90,7 @@ public class Circuit extends AbstractConstraint {
 
         if (length < x.length - 1) {
             // avoid inner loops
-            x[destj].remove(origi); // avoid inner loops
+            x[destj].remove(origi);
         }
     }
 
