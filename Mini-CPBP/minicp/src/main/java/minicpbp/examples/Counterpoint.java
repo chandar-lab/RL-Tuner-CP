@@ -1,3 +1,5 @@
+// 6 13 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 6 13 6
+
 package minicpbp.examples;
 
 import minicpbp.engine.core.BoolVar;
@@ -13,11 +15,11 @@ import static minicpbp.cp.Factory.*;
 
 public class Counterpoint {
     private static Solver cp;
-    private static int n = 32;
+    private static int n = 14;
     private static int tonic = 5;
     private static int dominant = 12;
     private static int nNoteValues = 29;
-    private static int minNbCharacteristicModalSkips = 10;
+    private static int minNbCharacteristicModalSkips = 3;
     // Only natural notes + Bb to prevent tritones
     //                                  Bb B  C  D  E  F   G   A   Bb  B   C   D
     private static int[] pitchDomain = {3, 4, 5, 7, 9, 10, 12, 14, 15, 16, 17, 19};
@@ -44,9 +46,18 @@ public class Counterpoint {
             System.out.println();
         }
 
-        ArrayList<Integer> previousNotes = (ArrayList<Integer>) Arrays.stream(args)
+        ArrayList<Integer> previousNotesSixteenth = (ArrayList<Integer>) Arrays.stream(args)
                 .map(Integer::parseInt)
                 .collect(Collectors.toList());
+
+        int note = -1;
+        ArrayList<Integer> previousNotes = new ArrayList<>();
+        for(int i = 0; i < previousNotesSixteenth.size(); i++) {
+            if (previousNotesSixteenth.get(i) != note) {
+                previousNotes.add(previousNotesSixteenth.get(i));
+                note = previousNotesSixteenth.get(i);
+            }
+        }
 
         double[] marginals = new double[nNoteValues];
 

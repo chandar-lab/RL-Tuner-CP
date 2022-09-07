@@ -6,7 +6,10 @@ import minicpbp.engine.core.Solver;
 import minicpbp.util.exception.InconsistencyException;
 
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Random;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import static minicpbp.cp.Factory.*;
 
@@ -14,24 +17,22 @@ public class CounterpointViolationRythm {
     private static Solver cp;
     private static int n = 14;
     private static boolean useRandomSequence = false;
-    private static int maxDuration = 16;
+    private static int maxDuration = 224;
 
     public static void main(String[] args) {
         ArrayList<Integer> previousDurations = new ArrayList<>();
+        ArrayList<Integer> previousNotes = new ArrayList<>();
         int index = 0;
         while(index < args.length) {
-            if (Integer.parseInt(args[index]) > 0) {
-                int note = Integer.parseInt(args[index]);
-                int duration = 0;
-                while (index < args.length && note == Integer.parseInt(args[index])) {
-                    duration++;
-                    index++;
-                }
-                previousDurations.add(duration);
-            } else
+            int note = Integer.parseInt(args[index]);
+            int duration = 0;
+            while (index < args.length && note == Integer.parseInt(args[index])) {
+                duration++;
                 index++;
+            }
+            previousDurations.add(duration);
+            previousNotes.add(note);
         }
-
 
         if (useRandomSequence) {
             Random random = new Random();
@@ -54,38 +55,53 @@ public class CounterpointViolationRythm {
          */
         int currentDuration = previousDurations.get(previousDurations.size() - 1);
         previousDurations.remove(previousDurations.size() - 1);
+        previousNotes.remove(previousNotes.size() - 1);
         int pastDuration = 0;
-        if (previousDurations.size() > 1 && currentDuration == 1) {
+        if (previousDurations.size() > 0 && currentDuration == 1) {
             pastDuration = previousDurations.get(previousDurations.size() - 1);
             previousDurations.remove(previousDurations.size() - 1);
+            previousNotes.remove(previousNotes.size() - 1);
         }
 
-
-        double[] marginals = new double[maxDuration];
-
         cp = makeSolver();
-
-        IntVar[] durationsFuture = makeIntVarArray(cp,n - previousDurations.size(), 1, maxDuration);
+        int size = n - previousDurations.size();
+        IntVar[] durationsFuture = makeIntVarArray(cp, size, 1, maxDuration);
 
         try {
             // Rythm constraints
-            IntVar violations = rythm(previousDurations, durationsFuture);
             initializeMarginals(durationsFuture, currentDuration, pastDuration);
+            IntVar violations = rythm(previousDurations, durationsFuture);
+            IntVar naturalRythmViolations = naturalRythm(durationsFuture);
+
             //printTime();
             solve();
             //printTime()
             System.out.println(Math.max(0, violations.min()));
+            System.out.println(Math.max(0, naturalRythmViolations.min()));
+
 
             // If there is a contradiction in the constraints, it means that there is no solution
         } catch(InconsistencyException e) {
-            printMarginals(marginals);
-            //main(null);
+            System.out.println("Should not go there");
         }
+    }
+
+    private static IntVar naturalRythm(IntVar[] durationsFuture) {
+        IntVar[] notNaturalDuration = makeIntVarArray(cp, durationsFuture.length, 0, 1);
+        for (int i = 0; i < durationsFuture.length; i++) {
+            notNaturalDuration[i] = isEqual(sum(isEqual(durationsFuture[i], 1), isEqual(durationsFuture[i], 2), isEqual(durationsFuture[i], 4), isEqual(durationsFuture[i], 8), isEqual(durationsFuture[i], 16)), makeIntVar(cp, 0, 0));
+        }
+
+        IntVar[] exceedsMax = makeIntVarArray(cp, durationsFuture.length, 0, maxDuration);
+        for (int i = 0; i < durationsFuture.length; i++) {
+            exceedsMax[i] = maximum(makeIntVar(cp, 0, 0), sum(durationsFuture[i], makeIntVar(cp, -16, -16)));
+        }
+        return sum(sum(notNaturalDuration), sum(exceedsMax));
     }
 
     private static IntVar rythm(ArrayList<Integer> previousDurations, IntVar[] durationsFuture) {
         int maxOfShortNotes = 0;
-        int minOfLongNotes = Integer.MAX_VALUE;
+        int minOfLongNotes = 1000;
         for (int i = 0; i < previousDurations.size(); i++) {
             if (i % 3 == 2) {
                 if (previousDurations.get(i) < minOfLongNotes) {
@@ -103,37 +119,39 @@ public class CounterpointViolationRythm {
         if(minOfLongNotes == 1)
             minOfLongNotes++;
 
-        boolean[] longNotes = new boolean[]{
-                false, false, true, false, false, true, false, false, true, false, false, true, false, false};
+        ArrayList<Integer> longNotes = new ArrayList<>(Arrays.asList(
+                1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1, 2, 1, 1));
 
-        IntVar[] violations = makeIntVarArray(cp, durationsFuture.length - 1, 0, 1);
-        for (int i = 0; i < durationsFuture.length - 1; i++) {
-            boolean isLongI = longNotes[previousDurations.size() + i];
+        IntVar[] violations = makeIntVarArray(cp, durationsFuture.length, 0, 1);
+        for (int i = 0; i < durationsFuture.length; i++) {
+            int statusI = longNotes.get(previousDurations.size() + i);
             IntVar[] noteViolations = makeIntVarArray(cp, durationsFuture.length - 1, 0, 1);
-            BoolVar previousDurationViolations;
-            if(isLongI) {
-                previousDurationViolations = isLessOrEqual(durationsFuture[i], maxOfShortNotes);
+            IntVar previousDurationViolations;
+            if(statusI == 2) {
+                previousDurationViolations = maximum(makeIntVar(cp, 0, 0), sum(makeIntVar(cp, maxOfShortNotes + 1, maxOfShortNotes + 1), minus(durationsFuture[i])));
+            } else if (statusI == 1){
+                previousDurationViolations = maximum(makeIntVar(cp, 0, 0), sum(makeIntVar(cp, -minOfLongNotes + 1, -minOfLongNotes + 1), durationsFuture[i]));
             } else {
-                previousDurationViolations = isLargerOrEqual(durationsFuture[i], minOfLongNotes);
+                previousDurationViolations = makeIntVar(cp, 0, 0);
             }
-
-            for (int j = i + 1; j < durationsFuture.length; j++) {
-                boolean isLongJ = longNotes[previousDurations.size() + j];
-                if(isLongI && !isLongJ) {
-                    noteViolations[j - 1] = isLessOrEqual(durationsFuture[i], durationsFuture[j]);
-                }
-                if(!isLongI && isLongJ) {
-                    noteViolations[j - 1] = isLessOrEqual(durationsFuture[j], durationsFuture[i]);
+            if (i != durationsFuture.length - 1) {
+                for (int j = i + 1; j < durationsFuture.length; j++) {
+                    int statusJ = longNotes.get(previousDurations.size() + j);
+                    if (statusI == 2 && statusJ == 1) {
+                        noteViolations[j - 1] = maximum(makeIntVar(cp, 0, 0), sum(durationsFuture[j], minus(durationsFuture[i])));
+                    }
+                    if (statusI == 1 && statusJ == 2) {
+                        noteViolations[j - 1] = maximum(makeIntVar(cp, 0, 0), sum(durationsFuture[i], minus(durationsFuture[j])));
+                    }
                 }
             }
-            violations[i] = sum(sum(noteViolations), previousDurationViolations);
+            violations[i] = sum(durationsFuture.length > 1 ? sum(noteViolations) : makeIntVar(cp, 0, 0), previousDurationViolations);
         }
         return sum(violations);
     }
 
     private static void solve() {
         cp.fixPoint();
-        cp.beliefPropa();
     }
 
     private static void initializeMarginals(IntVar[] durations, int currentDuration, int pastDuration) {
@@ -142,14 +160,6 @@ public class CounterpointViolationRythm {
             durations[1].removeBelow(currentDuration);
         } else {
             durations[0].removeBelow(currentDuration);
-        }
-    }
-
-    public static void printMarginals(double[] marginals) {
-        int i = 0;
-        for (double m : marginals) {
-            System.out.println(m);
-            i++;
         }
     }
 

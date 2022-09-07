@@ -11,7 +11,6 @@
 .mtj.tmp/
 
 # Package Files #
-*.jar
 *.war
 *.nar
 *.ear
@@ -29,7 +28,10 @@ Mini-CPBP/minicp/.idea
 *.iml
 *.mf
 Mini-CPBP/minicp/target
+Mini-CPBP/minicp/classes
 
 venv
 RL-Tuner/.idea/
 RL-Tuner/__pycache__/
+RL-Tuner/wandb
+RL-Tuner/rl_tuner.sh

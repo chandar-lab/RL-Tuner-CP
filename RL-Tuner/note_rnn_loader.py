@@ -147,6 +147,20 @@ class NoteRNNLoader(object):
     for var in self.variables():
       inner_name = rl_tuner_ops.get_inner_scope(var.name)
       inner_name = rl_tuner_ops.trim_variable_postfixes(inner_name)
+      inner_name = inner_name.replace("lstm_cell", "basic_lstm_cell")
+      if '/Adam' in var.name:
+        # TODO(lukaszkaiser): investigate the problem here and remove this hack.
+        pass
+      elif self.note_rnn_type == 'basic_rnn':
+        var_dict[inner_name] = var
+      else:
+        var_dict[self.checkpoint_scope + '/' + inner_name] = var
+
+    return var_dict
+    """var_dict = dict()
+    for var in self.variables():
+      inner_name = rl_tuner_ops.get_inner_scope(var.name)
+      inner_name = rl_tuner_ops.trim_variable_postfixes(inner_name)
       if '/Adam' in var.name:
         # TODO(lukaszkaiser): investigate the problem here and remove this hack.
         pass
@@ -161,7 +175,7 @@ class NoteRNNLoader(object):
 
         var_dict[self.checkpoint_scope + '/' + inner_name] = var
 
-    return var_dict
+    return var_dict"""
 
   def build_graph(self):
     """Constructs the portion of the graph that belongs to this model."""
@@ -173,11 +187,11 @@ class NoteRNNLoader(object):
         with tf.variable_scope(self.scope):
           # Make an LSTM cell with the number and size of layers specified in
           # hparams.
-          if self.note_rnn_type == 'basic_rnn':
-            self.cell = events_rnn_graph.make_rnn_cell(
-                self.hparams.rnn_layer_sizes)
-          else:
-            self.cell = rl_tuner_ops.make_rnn_cell(self.hparams.rnn_layer_sizes)
+          #if self.note_rnn_type == 'basic_rnn':
+          #  self.cell = events_rnn_graph.make_rnn_cell(
+          #      self.hparams.rnn_layer_sizes)
+          #else:
+          self.cell = rl_tuner_ops.make_rnn_cell(self.hparams.rnn_layer_sizes)
           # Shape of melody_sequence is batch size, melody length, number of
           # output note actions.
           self.melody_sequence = tf.placeholder(tf.float32,
@@ -258,6 +272,7 @@ class NoteRNNLoader(object):
     tf.logging.info('Restoring variables from checkpoint')
 
     var_dict = self.get_variable_name_dict()
+
     with self.graph.as_default():
       saver = tf.train.Saver(var_list=var_dict)
 

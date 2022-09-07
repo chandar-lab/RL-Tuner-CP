@@ -26,10 +26,13 @@ from __future__ import division
 from __future__ import print_function
 
 import collections
+import json
 import os
 import random
+import sys
 import urllib
 import math
+import time
 
 import note_rnn_loader
 import rl_tuner_eval_metrics
@@ -42,12 +45,10 @@ import scipy.special
 from six.moves import range  # pylint: disable=redefined-builtin
 from six.moves import reload_module  # pylint: disable=redefined-builtin
 from six.moves import urllib  # pylint: disable=redefined-builtin
+from subprocess import Popen, PIPE, STDOUT
 import tensorflow.compat.v1 as tf
 from tqdm import tqdm
-
-# Note values of special actions.
-NOTE_OFF = 0
-NO_EVENT = 1
+import wandb
 
 # Training data sequences are limited to this length, so the padding queue pads
 # to this length.
@@ -70,7 +71,10 @@ class RLTuner(object):
                # Hyperparameters
                dqn_hparams=None,
                reward_mode='music_theory_all',
+               restrict_domain=False,
+               include_rythm = True,
                reward_scaler=1.0,
+               cp_reward_scaler=40,
                exploration_mode='egreedy',
                priming_mode='random_note',
                stochastic_observations=False,
@@ -83,7 +87,7 @@ class RLTuner(object):
                note_rnn_hparams=None,
 
                # Other music related settings.
-               num_notes_in_melody=32,
+               num_notes_in_melody=14,
                input_size=rl_tuner_ops.NUM_CLASSES,
                num_actions=rl_tuner_ops.NUM_CLASSES,
                midi_primer=None,
@@ -145,6 +149,27 @@ class RLTuner(object):
         MelodyRNN networks and build the graph in the constructor.
     """
     # Make graph.
+    self.assign_paths(reward_mode)
+    mutex_path = 'mutex.txt'
+    self.waiting_times = random.sample(range(0, 100), 100)
+    self.waiting_index = 0
+    while os.path.isfile(mutex_path):
+      waiting_time = self.waiting_times[self.waiting_index]
+      self.waiting_index = (self.waiting_index + 1) % 100
+      time.sleep(waiting_time)
+      pass
+
+    with open(mutex_path, 'w') as f:
+      f.write('Hello World')
+    self.marginals, self.violations, self.marginals_rythm, self.violations_rythm = self.load_marginals()
+
+    if os.path.isfile(mutex_path):
+      try :
+        os.remove(mutex_path)
+      except:
+        pass
+
+
     self.graph = tf.Graph()
 
     with self.graph.as_default():
@@ -156,6 +181,8 @@ class RLTuner(object):
       self.save_path = os.path.join(output_dir, save_name)
       self.reward_scaler = reward_scaler
       self.reward_mode = reward_mode
+      self.restrict_domain = restrict_domain
+      self.include_rythm = include_rythm
       self.exploration_mode = exploration_mode
       self.num_notes_in_melody = num_notes_in_melody
       self.stochastic_observations = stochastic_observations
@@ -167,16 +194,15 @@ class RLTuner(object):
       self.note_rnn_checkpoint_file = note_rnn_checkpoint_file
       self.note_rnn_hparams = note_rnn_hparams
       self.note_rnn_type = note_rnn_type
-
+      self.cp_reward_scaler = cp_reward_scaler
       if priming_mode == 'single_midi' and midi_primer is None:
         tf.logging.fatal('A midi primer file is required when using'
                          'the single_midi priming mode.')
-
       if note_rnn_checkpoint_dir is None or not note_rnn_checkpoint_dir:
         print('Retrieving checkpoint of Note RNN from Magenta download server.')
         urllib.request.urlretrieve(
-            'http://download.magenta.tensorflow.org/models/'
-            'rl_tuner_note_rnn.ckpt', 'note_rnn.ckpt')
+          'http://download.magenta.tensorflow.org/models/'
+          'rl_tuner_note_rnn.ckpt', 'note_rnn.ckpt')
         self.note_rnn_checkpoint_dir = os.getcwd()
         self.note_rnn_checkpoint_file = os.path.join(os.getcwd(),
                                                      'note_rnn.ckpt')
@@ -187,23 +213,20 @@ class RLTuner(object):
         else:
           self.note_rnn_hparams = rl_tuner_ops.default_hparams()
 
-      if self.algorithm == 'g' or self.algorithm == 'pure_rl':
-        self.reward_mode = 'music_theory_only'
-
       if dqn_hparams is None:
         self.dqn_hparams = rl_tuner_ops.default_dqn_hparams()
       else:
         self.dqn_hparams = dqn_hparams
       self.discount_rate = tf.constant(self.dqn_hparams.discount_rate)
       self.target_network_update_rate = tf.constant(
-          self.dqn_hparams.target_network_update_rate)
+        self.dqn_hparams.target_network_update_rate)
 
       self.optimizer = tf.train.AdamOptimizer()
 
       # DQN state.
       self.actions_executed_so_far = 0
       self.experience = collections.deque(
-          maxlen=self.dqn_hparams.max_experience)
+        maxlen=self.dqn_hparams.max_experience)
       self.iteration = 0
       self.summary_writer = summary_writer
       self.num_times_store_called = 0
@@ -213,18 +236,22 @@ class RLTuner(object):
     self.reward_last_n = 0
     self.rewards_batched = []
     self.music_theory_reward_last_n = 0
+    self.cp_reward_last_n = 0
     self.music_theory_rewards_batched = []
     self.note_rnn_reward_last_n = 0
     self.note_rnn_rewards_batched = []
     self.eval_avg_reward = []
+    self.eval_avg_cp_reward = []
     self.eval_avg_music_theory_reward = []
     self.eval_avg_note_rnn_reward = []
+
     self.target_val_list = []
 
     # Variables to keep track of characteristics of the current composition
     # TODO(natashajaques): Implement composition as a class to obtain data
     # encapsulation so that you can't accidentally change the leap direction.
     self.beat = 0
+    self.n_notes = 0
     self.composition = []
     self.composition_direction = 0
     self.leapt_from = None  # stores the note at which composition leapt
@@ -235,6 +262,20 @@ class RLTuner(object):
 
     if initialize_immediately:
       self.initialize_internal_models_graph_session()
+
+  def assign_paths(self, reward_mode):
+    self.cp_marginals_path = './counterpoint_marginals.jar'
+    self.cp_violations_path = './counterpoint_violations.jar'
+    self.cp_marginals_rythm_path = './counterpoint_marginals_rythm_token.jar'
+    self.cp_violations_rythm_path = './counterpoint_violations_rythm_token.jar'
+    self.cp_rltuner_path = './counterpoint_rltuner.jar'
+    self.cp_rltuner_rythm_path = './counterpoint_rltuner_rythm_token.jar'
+
+    self.marginals_path = reward_mode + '/marginals.txt'
+    self.violations_path = reward_mode + '/violations.txt'
+    self.marginals_rythm_path = reward_mode + '/marginals_rythm_token.txt'
+    self.violations_rythm_path = reward_mode + '/violations_rythm_token.txt'
+
 
   def initialize_internal_models_graph_session(self,
                                                restore_from_checkpoint=True):
@@ -254,34 +295,34 @@ class RLTuner(object):
       # Add internal networks to the graph.
       tf.logging.info('Initializing q network')
       self.q_network = note_rnn_loader.NoteRNNLoader(
-          self.graph, 'q_network',
-          self.note_rnn_checkpoint_dir,
-          midi_primer=self.midi_primer,
-          training_file_list=self.training_file_list,
-          checkpoint_file=self.note_rnn_checkpoint_file,
-          hparams=self.note_rnn_hparams,
-          note_rnn_type=self.note_rnn_type)
+        self.graph, 'q_network',
+        self.note_rnn_checkpoint_dir,
+        midi_primer=self.midi_primer,
+        training_file_list=self.training_file_list,
+        checkpoint_file=self.note_rnn_checkpoint_file,
+        hparams=self.note_rnn_hparams,
+        note_rnn_type=self.note_rnn_type)
 
       tf.logging.info('Initializing target q network')
       self.target_q_network = note_rnn_loader.NoteRNNLoader(
-          self.graph,
-          'target_q_network',
-          self.note_rnn_checkpoint_dir,
-          midi_primer=self.midi_primer,
-          training_file_list=self.training_file_list,
-          checkpoint_file=self.note_rnn_checkpoint_file,
-          hparams=self.note_rnn_hparams,
-          note_rnn_type=self.note_rnn_type)
+        self.graph,
+        'target_q_network',
+        self.note_rnn_checkpoint_dir,
+        midi_primer=self.midi_primer,
+        training_file_list=self.training_file_list,
+        checkpoint_file=self.note_rnn_checkpoint_file,
+        hparams=self.note_rnn_hparams,
+        note_rnn_type=self.note_rnn_type)
 
       tf.logging.info('Initializing reward network')
       self.reward_rnn = note_rnn_loader.NoteRNNLoader(
-          self.graph, 'reward_rnn',
-          self.note_rnn_checkpoint_dir,
-          midi_primer=self.midi_primer,
-          training_file_list=self.training_file_list,
-          checkpoint_file=self.note_rnn_checkpoint_file,
-          hparams=self.note_rnn_hparams,
-          note_rnn_type=self.note_rnn_type)
+        self.graph, 'reward_rnn',
+        self.note_rnn_checkpoint_dir,
+        midi_primer=self.midi_primer,
+        training_file_list=self.training_file_list,
+        checkpoint_file=self.note_rnn_checkpoint_file,
+        hparams=self.note_rnn_hparams,
+        note_rnn_type=self.note_rnn_type)
 
       tf.logging.info('Q network cell: %s', self.q_network.cell)
 
@@ -361,7 +402,7 @@ class RLTuner(object):
 
     tf.logging.info('Stored priming notes: %s', self.priming_notes)
 
-  def prime_internal_model(self, model):
+  def prime_internal_model(self, model, restrict_domain=False):
     """Prime an internal model such as the q_network based on priming mode.
     Args:
       model: The internal model that should be primed.
@@ -373,31 +414,41 @@ class RLTuner(object):
     if self.priming_mode == 'random_midi':
       priming_idx = np.random.randint(0, len(self.priming_states))
       model.state_value = np.reshape(
-          self.priming_states[priming_idx, :],
-          (1, model.cell.state_size))
+        self.priming_states[priming_idx, :],
+        (1, model.cell.state_size))
       priming_note = self.priming_notes[priming_idx]
       next_obs = np.array(
-          rl_tuner_ops.make_onehot([priming_note], self.num_actions)).flatten()
+        rl_tuner_ops.make_onehot([priming_note], self.num_actions)).flatten()
       tf.logging.debug(
-          'Feeding priming state for midi file %s and corresponding note %s',
-          priming_idx, priming_note)
+        'Feeding priming state for midi file %s and corresponding note %s',
+        priming_idx, priming_note)
     elif self.priming_mode == 'single_midi':
       model.prime_model()
       next_obs = model.priming_note
     elif self.priming_mode == 'random_note':
-      next_obs = self.get_random_note()
+      next_obs = self.get_random_note(restrict_domain=restrict_domain)
     else:
       tf.logging.warn('Error! Invalid priming mode. Priming with random note')
-      next_obs = self.get_random_note()
+      next_obs = self.get_random_note(restrict_domain=restrict_domain)
 
     return next_obs
 
-  def get_random_note(self):
+  def get_random_note(self, restrict_domain=False):
     """Samle a note uniformly at random.
     Returns:
       random note
     """
-    note_idx = np.random.randint(0, self.num_actions - 1)
+    if self.n_notes < self.num_notes_in_melody:
+      marginals, self.marginals = self.return_cp_call(self.marginals, self.cp_marginals_path)
+    marginals_rythm, self.marginals_rythm = self.return_cp_call(self.marginals_rythm, self.cp_marginals_rythm_path)
+    if restrict_domain:
+      domain = np.where(marginals)[0]
+      note_idx = np.random.randint(0, self.num_actions)
+      if len(domain) > 0:
+        index = np.random.randint(0, len(domain))
+        note_idx = domain[index]
+    else:
+      note_idx = np.random.randint(0, self.num_actions)
     return np.array(rl_tuner_ops.make_onehot([note_idx],
                                              self.num_actions)).flatten()
 
@@ -407,6 +458,7 @@ class RLTuner(object):
     melodic leap.
     """
     self.beat = 0
+    self.n_notes = 0
     self.composition = []
     self.composition_direction = 0
     self.leapt_from = None
@@ -425,7 +477,7 @@ class RLTuner(object):
       # each note).
       self.action_scores = tf.identity(self.q_network(), name='action_scores')
       tf.summary.histogram(
-          'action_scores', self.action_scores)
+        'action_scores', self.action_scores)
 
       # The action values for the G algorithm are computed differently.
       if self.algorithm == 'g':
@@ -453,7 +505,7 @@ class RLTuner(object):
       # the state resulting from the current action.
       self.next_action_scores = tf.stop_gradient(self.target_q_network())
       tf.summary.histogram(
-          'target_action_scores', self.next_action_scores)
+        'target_action_scores', self.next_action_scores)
 
       # Rewards are observed from the environment and are fed in later.
       self.rewards = tf.placeholder(tf.float32, (None,), name='rewards')
@@ -462,20 +514,20 @@ class RLTuner(object):
       # function.
       if self.algorithm == 'psi':
         self.target_vals = tf.reduce_logsumexp(self.next_action_scores,
-                                               reduction_indices=[1,])
+                                               reduction_indices=[1, ])
       elif self.algorithm == 'g':
         self.g_normalizer = tf.reduce_logsumexp(self.reward_scores,
-                                                reduction_indices=[1,])
+                                                reduction_indices=[1, ])
         self.g_normalizer = tf.reshape(self.g_normalizer, [-1, 1])
         self.g_normalizer = tf.tile(self.g_normalizer, [1, self.num_actions])
         self.g_action_scores = tf.subtract(
-            (self.next_action_scores + self.reward_scores), self.g_normalizer)
+          (self.next_action_scores + self.reward_scores), self.g_normalizer)
         self.target_vals = tf.reduce_logsumexp(self.g_action_scores,
-                                               reduction_indices=[1,])
+                                               reduction_indices=[1, ])
       else:
         # Use default based on Q learning.
         self.target_vals = tf.reduce_max(self.next_action_scores,
-                                         reduction_indices=[1,])
+                                         reduction_indices=[1, ])
 
       # Total rewards are the observed rewards plus discounted estimated future
       # rewards.
@@ -489,7 +541,7 @@ class RLTuner(object):
                                         name='action_mask')
       self.masked_action_scores = tf.reduce_sum(self.action_scores *
                                                 self.action_mask,
-                                                reduction_indices=[1,])
+                                                reduction_indices=[1, ])
 
       temp_diff = self.masked_action_scores - self.future_rewards
 
@@ -529,10 +581,47 @@ class RLTuner(object):
       self.target_network_update = tf.group(*self.target_network_update)
 
     tf.summary.scalar(
-        'prediction_error', self.prediction_error)
+      'prediction_error', self.prediction_error)
 
     self.summarize = tf.summary.merge_all()
     self.no_op1 = tf.no_op()
+
+  def log_stats(self, stats):
+    wandb.log({"naturalNotes": float(stats['naturalNotes'])})
+    wandb.log({"intervals": float(stats['intervals'])})
+    wandb.log({"tritonOutlines": float(stats['tritonOutlines'])})
+    wandb.log({"tonicEnds": float(stats['tonicEnds'])})
+    wandb.log({"stepwiseDescentToFinal": float(stats['stepwiseDescentToFinal'])})
+    wandb.log({"noRepeat": float(stats['noRepeat'])})
+    wandb.log({"coverModalRange": float(stats['coverModalRange'])})
+    wandb.log({"characteristicModalSkips": float(stats['characteristicModalSkips'])})
+    wandb.log({"skipsStepsRatio": float(stats['skipsStepsRatio'])})
+    wandb.log({"avoidSixths": float(stats['avoidSixths'])})
+    wandb.log({"skipStepsSequence": float(stats['skipStepsSequence'])})
+    wandb.log({"bFlat": float(stats['bFlat'])})
+    wandb.log({"naturalDurations" : float(stats['naturalDurations'])})
+    wandb.log({"smallDurations": float(stats['smallDurations'])})
+    wandb.log({"maxTokens": float(stats['maxTokens'])})
+    wandb.log({"naturalNotesPercent": float(stats['naturalNotesPercent'])})
+    wandb.log({"intervalsPercent": float(stats['intervalsPercent'])})
+    wandb.log({"tritonOutlinesPercent": float(stats['tritonOutlinesPercent'])})
+    wandb.log({"tonicEndsPercent": float(stats['tonicEndsPercent'])})
+    wandb.log({"stepwiseDescentToFinalPercent": float(stats['stepwiseDescentToFinalPercent'])})
+    wandb.log({"noRepeatPercent": float(stats['noRepeatPercent'])})
+    wandb.log({"coverModalRangePercent": float(stats['coverModalRangePercent'])})
+    wandb.log({"characteristicModalSkipsPercent": float(stats['characteristicModalSkipsPercent'])})
+    wandb.log({"skipsStepsRatioPercent": float(stats['skipsStepsRatioPercent'])})
+    wandb.log({"avoidSixthsPercent": float(stats['avoidSixthsPercent'])})
+    wandb.log({"skipStepsSequencePercent": float(stats['skipStepsSequencePercent'])})
+    wandb.log({"bFlatPercent": float(stats['bFlatPercent'])})
+    wandb.log({"naturalDurationsPercent" : float(stats['naturalDurationsPercent'])})
+    wandb.log({"maxTokensPercent": float(stats['maxTokensPercent'])})
+    wandb.log({"smallDurationsPercent": float(stats['smallDurationsPercent'])})
+    wandb.log({"rnnReward": float(stats['rnn_reward'])})
+    wandb.log({"marginalsReward": float(stats['marginals_reward'])})
+    wandb.log({"violationsReward": float(stats['violations_reward'])})
+    wandb.log({"constraint_performance": float(stats['constraint_performance'])})
+
 
   def train(self, num_steps=10000, exploration_period=5000, enable_random=True):
     """Main training function that allows model to act, collects reward, trains.
@@ -547,7 +636,11 @@ class RLTuner(object):
         explore.
     """
     tf.logging.info('Evaluating initial model...')
-    self.evaluate_model()
+    stats = rl_tuner_eval_metrics.compute_composition_stats(self,
+                                                            num_compositions=10,
+                                                           composition_length=self.num_notes_in_melody)
+    self.log_stats(stats)
+    wandb.log({"timesteps": 0})
 
     self.actions_executed_so_far = 0
 
@@ -559,7 +652,7 @@ class RLTuner(object):
       sample_next_obs = True
 
     self.reset_composition()
-    last_observation = self.prime_internal_models()
+    last_observation = self.prime_internal_models(restrict_domain=self.restrict_domain)
 
     for i in tqdm(range(num_steps)):
       # Experiencing observation, state, action, reward, new observation,
@@ -567,48 +660,46 @@ class RLTuner(object):
       state = np.array(self.q_network.state_value).flatten()
 
       action, new_observation, reward_scores = self.action(
-          last_observation, exploration_period, enable_random=enable_random,
-          sample_next_obs=sample_next_obs)
+        last_observation, exploration_period, enable_random=enable_random,
+        sample_next_obs=sample_next_obs, restrict_domain=self.restrict_domain)
+
+      if self.composition == [] or (np.argmax(new_observation) != self.composition[-1]):
+        self.n_notes += 1
 
       new_state = np.array(self.q_network.state_value).flatten()
       new_reward_state = np.array(self.reward_rnn.state_value).flatten()
 
-      reward = self.collect_reward(last_observation, new_observation,
-                                   reward_scores)
-
-      self.store(last_observation, state, action, reward, new_observation,
-                 new_state, new_reward_state)
-
-      # Used to keep track of how the reward is changing over time.
-      self.reward_last_n += reward
-
-      # Used to keep track of the current musical composition and beat for
-      # the reward functions.
-      self.composition.append(np.argmax(new_observation))
-      self.beat += 1
+      if i > 0 and i % 15000 == 0:
+        self.save_marginals()
 
       if i > 0 and i % self.output_every_nth == 0:
         tf.logging.info('Evaluating model...')
-        self.evaluate_model()
-        #self.save_model(self.algorithm)
+        stats = rl_tuner_eval_metrics.compute_composition_stats(self,
+                                                                num_compositions=10,
+                                                                composition_length=self.num_notes_in_melody)
+        self.log_stats(stats)
+        wandb.log({"timesteps": i})
+        # self.save_model(self.algorithm)
 
         if self.algorithm == 'g':
           self.rewards_batched.append(
-              self.music_theory_reward_last_n + self.note_rnn_reward_last_n)
+            self.music_theory_reward_last_n + self.note_rnn_reward_last_n)
         else:
           self.rewards_batched.append(self.reward_last_n)
         self.music_theory_rewards_batched.append(
-            self.music_theory_reward_last_n)
+          self.music_theory_reward_last_n)
         self.note_rnn_rewards_batched.append(self.note_rnn_reward_last_n)
 
         # Save a checkpoint.
-        save_step = len(self.rewards_batched)*self.output_every_nth
-        #self.saver.save(self.session, self.save_path, global_step=save_step)
+        save_step = len(self.rewards_batched) * self.output_every_nth
+        # self.saver.save(self.session, self.save_path, global_step=save_step)
 
         r = self.reward_last_n
         tf.logging.info('Training iteration %s', i)
         tf.logging.info('\tReward for last %s steps: %s',
                         self.output_every_nth, r)
+        tf.logging.info('\t\tCP reward: %s',
+                        self.cp_reward_last_n)
         tf.logging.info('\t\tMusic theory reward: %s',
                         self.music_theory_reward_last_n)
         tf.logging.info('\t\tNote RNN reward: %s', self.note_rnn_reward_last_n)
@@ -618,33 +709,54 @@ class RLTuner(object):
         # https://github.com/tensorflow/tensorflow/issues/3047)
         print('Training iteration', i)
         print('\tReward for last', self.output_every_nth, 'steps:', r)
+        print('\t\tCP reward:', self.cp_reward_last_n)
         print('\t\tMusic theory reward:', self.music_theory_reward_last_n)
         print('\t\tNote RNN reward:', self.note_rnn_reward_last_n)
 
         if self.exploration_mode == 'egreedy':
           exploration_p = rl_tuner_ops.linear_annealing(
-              self.actions_executed_so_far, exploration_period, 1.0,
-              self.dqn_hparams.random_action_probability)
+            self.actions_executed_so_far, exploration_period, 1.0,
+            self.dqn_hparams.random_action_probability)
           tf.logging.info('\tExploration probability is %s', exploration_p)
 
         self.reward_last_n = 0
         self.music_theory_reward_last_n = 0
         self.note_rnn_reward_last_n = 0
+        self.cp_reward_last_n = 0
 
-      # Backprop.
-      self.training_step()
+      if self.num_notes_in_melody >= self.n_notes and len(self.composition) < (self.num_notes_in_melody * 4):
+        reward = self.collect_reward(last_observation, new_observation,
+                                     reward_scores)
+        #print(reward)
+        sys.stdout.flush()
 
-      # Update current state as last state.
-      last_observation = new_observation
+        self.store(last_observation, state, action, reward, new_observation,
+                   new_state, new_reward_state)
+
+        # Used to keep track of how the reward is changing over time.
+        self.reward_last_n += reward
+
+        # Used to keep track of the current musical composition and beat for
+        # the reward functions.
+        self.composition.append(np.argmax(new_observation))
+        #print(self.composition)
+
+        # Update current state as last state.
+        last_observation = new_observation
+
+        # Backprop.
+        self.training_step()
 
       # Reset the state after each composition is complete.
-      if self.beat % self.num_notes_in_melody == 0:
+      else:
         tf.logging.debug('\nResetting composition!\n')
         self.reset_composition()
-        last_observation = self.prime_internal_models()
+        last_observation = self.prime_internal_models(restrict_domain=self.restrict_domain)
+
+    self.save_marginals()
 
   def action(self, observation, exploration_period=0, enable_random=True,
-             sample_next_obs=False):
+             sample_next_obs=False, restrict_domain=False):
     """Given an observation, runs the q_network to choose the current action.
     Does not backprop.
     Args:
@@ -667,8 +779,8 @@ class RLTuner(object):
     if self.exploration_mode == 'egreedy':
       # Compute the exploration probability.
       exploration_p = rl_tuner_ops.linear_annealing(
-          self.actions_executed_so_far, exploration_period, 1.0,
-          self.dqn_hparams.random_action_probability)
+        self.actions_executed_so_far, exploration_period, 1.0,
+        self.dqn_hparams.random_action_probability)
     elif self.exploration_mode == 'boltzmann':
       enable_random = False
       sample_next_obs = True
@@ -680,30 +792,45 @@ class RLTuner(object):
 
     (action, action_softmax, self.q_network.state_value,
      reward_scores, self.reward_rnn.state_value) = self.session.run(
-         [self.predicted_actions, self.action_softmax,
-          self.q_network.state_tensor, self.reward_scores,
-          self.reward_rnn.state_tensor],
-         {self.q_network.melody_sequence: input_batch,
-          self.q_network.initial_state: self.q_network.state_value,
-          self.q_network.lengths: lengths,
-          self.reward_rnn.melody_sequence: input_batch,
-          self.reward_rnn.initial_state: self.reward_rnn.state_value,
-          self.reward_rnn.lengths: lengths})
+      [self.predicted_actions, self.action_softmax,
+       self.q_network.state_tensor, self.reward_scores,
+       self.reward_rnn.state_tensor],
+      {self.q_network.melody_sequence: input_batch,
+       self.q_network.initial_state: self.q_network.state_value,
+       self.q_network.lengths: lengths,
+       self.reward_rnn.melody_sequence: input_batch,
+       self.reward_rnn.initial_state: self.reward_rnn.state_value,
+       self.reward_rnn.lengths: lengths})
 
     reward_scores = np.reshape(reward_scores, (self.num_actions))
     action_softmax = np.reshape(action_softmax, (self.num_actions))
     action = np.reshape(action, (self.num_actions))
 
     if enable_random and random.random() < exploration_p:
-      note = self.get_random_note()
+      note = self.get_random_note(restrict_domain=restrict_domain)
       return note, note, reward_scores
     else:
+      if self.n_notes < self.num_notes_in_melody:
+        marginals, self.marginals = self.return_cp_call(self.marginals, self.cp_marginals_path)
+      _, self.marginals_rythm = self.return_cp_call(self.marginals_rythm, self.cp_marginals_rythm_path)
       if not sample_next_obs:
+        if restrict_domain:
+          is_valid = np.asarray(marginals) > 0
+          valid_actions = action_softmax
+          if np.sum(is_valid) > 0:
+            valid_actions = action_softmax * is_valid
+          note = np.argmax(valid_actions)
+          action = np.array(rl_tuner_ops.make_onehot([note],
+                                                     self.num_actions)).flatten()
         return action, action, reward_scores
       else:
+        if restrict_domain:
+          is_valid = np.asarray(marginals) > 0
+          if np.sum(is_valid) > 0:
+            action_softmax = action_softmax * is_valid
         obs_note = rl_tuner_ops.sample_softmax(action_softmax)
         next_obs = np.array(
-            rl_tuner_ops.make_onehot([obs_note], self.num_actions)).flatten()
+          rl_tuner_ops.make_onehot([obs_note], self.num_actions)).flatten()
         return action, next_obs, reward_scores
 
   def store(self, observation, state, action, reward, newobservation, newstate,
@@ -776,38 +903,38 @@ class RLTuner(object):
 
       if self.algorithm == 'g':
         _, _, target_vals, summary_str = self.session.run([
-            self.prediction_error,
-            self.train_op,
-            self.target_vals,
-            self.summarize if calc_summaries else self.no_op1,
+          self.prediction_error,
+          self.train_op,
+          self.target_vals,
+          self.summarize if calc_summaries else self.no_op1,
         ], {
-            self.reward_rnn.melody_sequence: new_observations,
-            self.reward_rnn.initial_state: reward_new_states,
-            self.reward_rnn.lengths: lengths,
-            self.q_network.melody_sequence: observations,
-            self.q_network.initial_state: states,
-            self.q_network.lengths: lengths,
-            self.target_q_network.melody_sequence: new_observations,
-            self.target_q_network.initial_state: new_states,
-            self.target_q_network.lengths: lengths,
-            self.action_mask: action_mask,
-            self.rewards: rewards,
+          self.reward_rnn.melody_sequence: new_observations,
+          self.reward_rnn.initial_state: reward_new_states,
+          self.reward_rnn.lengths: lengths,
+          self.q_network.melody_sequence: observations,
+          self.q_network.initial_state: states,
+          self.q_network.lengths: lengths,
+          self.target_q_network.melody_sequence: new_observations,
+          self.target_q_network.initial_state: new_states,
+          self.target_q_network.lengths: lengths,
+          self.action_mask: action_mask,
+          self.rewards: rewards,
         })
       else:
         _, _, target_vals, summary_str = self.session.run([
-            self.prediction_error,
-            self.train_op,
-            self.target_vals,
-            self.summarize if calc_summaries else self.no_op1,
+          self.prediction_error,
+          self.train_op,
+          self.target_vals,
+          self.summarize if calc_summaries else self.no_op1,
         ], {
-            self.q_network.melody_sequence: observations,
-            self.q_network.initial_state: states,
-            self.q_network.lengths: lengths,
-            self.target_q_network.melody_sequence: new_observations,
-            self.target_q_network.initial_state: new_states,
-            self.target_q_network.lengths: lengths,
-            self.action_mask: action_mask,
-            self.rewards: rewards,
+          self.q_network.melody_sequence: observations,
+          self.q_network.initial_state: states,
+          self.q_network.lengths: lengths,
+          self.target_q_network.melody_sequence: new_observations,
+          self.target_q_network.initial_state: new_states,
+          self.target_q_network.lengths: lengths,
+          self.action_mask: action_mask,
+          self.rewards: rewards,
         })
 
       total_logs = (self.iteration * self.dqn_hparams.train_every_nth)
@@ -822,52 +949,6 @@ class RLTuner(object):
       self.iteration += 1
 
     self.num_times_train_called += 1
-
-  def evaluate_model(self, num_trials=100, sample_next_obs=True):
-    """Used to evaluate the rewards the model receives without exploring.
-    Generates num_trials compositions and computes the note_rnn and music
-    theory rewards. Uses no exploration so rewards directly relate to the
-    model's policy. Stores result in internal variables.
-    Args:
-      num_trials: The number of compositions to use for evaluation.
-      sample_next_obs: If True, the next note the model plays will be
-        sampled from its output distribution. If False, the model will
-        deterministically choose the note with maximum value.
-    """
-
-    note_rnn_rewards = [0] * num_trials
-    music_theory_rewards = [0] * num_trials
-    total_rewards = [0] * num_trials
-
-    for t in range(num_trials):
-
-      last_observation = self.prime_internal_models()
-      self.reset_composition()
-
-      for _ in range(self.num_notes_in_melody):
-        _, new_observation, reward_scores = self.action(
-            last_observation,
-            0,
-            enable_random=False,
-            sample_next_obs=sample_next_obs)
-
-        note_rnn_reward = self.reward_from_reward_rnn_scores(new_observation,
-                                                             reward_scores)
-        music_theory_reward = self.reward_music_theory(new_observation)
-        adjusted_mt_reward = self.reward_scaler * music_theory_reward
-        total_reward = note_rnn_reward + adjusted_mt_reward
-
-        note_rnn_rewards[t] = note_rnn_reward
-        music_theory_rewards[t] = music_theory_reward * self.reward_scaler
-        total_rewards[t] = total_reward
-
-        self.composition.append(np.argmax(new_observation))
-        self.beat += 1
-        last_observation = new_observation
-
-    self.eval_avg_reward.append(np.mean(total_rewards))
-    self.eval_avg_note_rnn_reward.append(np.mean(note_rnn_rewards))
-    self.eval_avg_music_theory_reward.append(np.mean(music_theory_rewards))
 
   def collect_reward(self, obs, action, reward_scores):
     """Calls whatever reward function is indicated in the reward_mode field.
@@ -887,70 +968,65 @@ class RLTuner(object):
     note_rnn_reward = self.reward_from_reward_rnn_scores(action, reward_scores)
     self.note_rnn_reward_last_n += note_rnn_reward
 
-    if self.reward_mode == 'scale':
-      # Makes the model play a scale (defaults to c major).
-      reward = self.reward_scale(obs, action)
-    elif self.reward_mode == 'key':
-      # Makes the model play within a key.
-      reward = self.reward_key_distribute_prob(action)
-    elif self.reward_mode == 'tonic':
-      reward = self.reward_tonic(action)
-    elif self.reward_mode == 'key_and_tonic':
-      # Makes the model play within a key, while starting and ending on the
-      # tonic note.
-      reward = self.reward_key(action)
-      reward += self.reward_tonic(action)
-    elif self.reward_mode == 'non_repeating':
-      # The model can play any composition it wants, but receives a large
-      # negative reward for playing the same note repeatedly.
-      reward = self.reward_non_repeating(action)
-    elif self.reward_mode == 'music_theory_random':
-      # The model receives reward for playing in key, playing tonic notes,
-      # and not playing repeated notes. However the rewards it receives are
-      # uniformly distributed over all notes that do not violate these rules.
-      reward = self.reward_key(action)
-      reward += self.reward_tonic(action)
-      reward += self.reward_penalize_repeating(action)
-    elif self.reward_mode == 'music_theory_basic':
-      # As above, the model receives reward for playing in key, tonic notes
-      # at the appropriate times, and not playing repeated notes. However, the
-      # rewards it receives are based on the note probabilities learned from
-      # data in the original model.
-      reward = self.reward_key(action)
-      reward += self.reward_tonic(action)
-      reward += self.reward_penalize_repeating(action)
+    if self.reward_mode == 'counterpoint_marginals_violations':
+      chosen_note = np.argmax(action)
+      marginals = self.get_counterpoint_marginals(self.include_rythm)
+      violations = self.get_counterpoint_violations(np.argmax(action), self.include_rythm)
+      reward = np.sum(violations) * -1
+      if self.composition != [] and chosen_note == self.composition[-1]:
+        reward *= 5
+      
+      return reward + marginals[chosen_note] * self.cp_reward_scaler
 
+    elif self.reward_mode == 'counterpoint_marginals':
+      chosen_note = np.argmax(action)
+      marginals = self.get_counterpoint_marginals(self.include_rythm)
+      return marginals[chosen_note] * self.cp_reward_scaler
+
+    elif self.reward_mode == 'counterpoint_violations':
+      violations = self.get_counterpoint_violations(np.argmax(action), self.include_rythm)
+      reward = np.sum(violations) * -1
+      if self.composition != [] and np.argmax(action) == self.composition[-1]:
+        reward *= 5
+      return reward
+
+    elif self.reward_mode == 'rnn_counterpoint_marginals_violations':
+      chosen_note = np.argmax(action)
+      marginals = self.get_counterpoint_marginals(self.include_rythm)
+      violations = self.get_counterpoint_violations(np.argmax(action), self.include_rythm)
+      reward = np.sum(violations) * -1
+      if self.composition != [] and chosen_note == self.composition[-1]:
+        reward *= 5
+      reward += marginals[chosen_note] * self.cp_reward_scaler
       return reward * self.reward_scaler + note_rnn_reward
-    elif self.reward_mode == 'music_theory_basic_plus_variety':
-      # Uses the same reward function as above, but adds a penalty for
-      # compositions with a high autocorrelation (aka those that don't have
-      # sufficient variety).
-      reward = self.reward_key(action)
-      reward += self.reward_tonic(action)
-      reward += self.reward_penalize_repeating(action)
-      reward += self.reward_penalize_autocorrelation(action)
 
+    elif self.reward_mode == 'rnn_counterpoint_marginals':
+      chosen_note = np.argmax(action)
+      marginals = self.get_counterpoint_marginals(self.include_rythm)
+      reward = marginals[chosen_note] * self.cp_reward_scaler
       return reward * self.reward_scaler + note_rnn_reward
-    elif self.reward_mode == 'preferred_intervals':
-      reward = self.reward_preferred_intervals(action)
-    elif self.reward_mode == 'music_theory_all':
-      tf.logging.debug('Note RNN reward: %s', note_rnn_reward)
 
-      reward = self.reward_music_theory(action)
-
-      tf.logging.debug('Total music theory reward: %s',
-                       self.reward_scaler * reward)
-      tf.logging.debug('Total note rnn reward: %s', note_rnn_reward)
-
-      self.music_theory_reward_last_n += reward * self.reward_scaler
+    elif self.reward_mode == 'rnn_counterpoint_violations':
+      violations = self.get_counterpoint_violations(np.argmax(action), self.include_rythm)
+      reward = np.sum(violations) * -1
+      if self.composition != [] and np.argmax(action) == self.composition[-1]:
+        reward *= 5
       return reward * self.reward_scaler + note_rnn_reward
-    elif self.reward_mode == 'music_theory_only':
-      reward = self.reward_music_theory(action)
+
+    elif self.reward_mode == 'rnn':
+      return note_rnn_reward
+
+    elif self.reward_mode == 'rltuner':
+      violations = self.get_counterpoint_rltuner(np.argmax(action), self.include_rythm)
+      reward = np.sum(violations) * -1
+      if self.composition != [] and np.argmax(action) == self.composition[-1]:
+        reward *= 5
+      print('reward', reward)
+      sys.stdout.flush()
+      return reward * self.reward_scaler + note_rnn_reward
+
     else:
       tf.logging.fatal('ERROR! Not a valid reward mode. Cannot compute reward')
-
-    self.music_theory_reward_last_n += reward * self.reward_scaler
-    return reward * self.reward_scaler
 
   def reward_from_reward_rnn_scores(self, action, reward_scores):
     """Rewards based on probabilities learned from data by trained RNN.
@@ -962,6 +1038,7 @@ class RLTuner(object):
     Returns:
       Float reward value.
     """
+
     action_note = np.argmax(action)
     normalization_constant = scipy.special.logsumexp(reward_scores)
     return reward_scores[action_note] - normalization_constant
@@ -985,686 +1062,255 @@ class RLTuner(object):
     lengths = np.full(self.reward_rnn.batch_size, 1, dtype=int)
 
     rewards, = self.session.run(
-        self.reward_scores,
-        {self.reward_rnn.melody_sequence: input_batch,
-         self.reward_rnn.initial_state: state,
-         self.reward_rnn.lengths: lengths})
+      self.reward_scores,
+      {self.reward_rnn.melody_sequence: input_batch,
+       self.reward_rnn.initial_state: state,
+       self.reward_rnn.lengths: lengths})
     return rewards
 
-  def reward_music_theory(self, action):
-    """Computes cumulative reward for all music theory functions.
-    Args:
-      action: A one-hot encoding of the chosen action.
-    Returns:
-      Float reward value.
-    """
-    reward = self.reward_key(action)
-    tf.logging.debug('Key: %s', reward)
-    prev_reward = reward
+  def load_marginals(self):
+    print(self.marginals_path)
+    with open(self.marginals_path) as f:
+      marginals = json.load(f)
 
-    reward += self.reward_tonic(action)
-    if reward != prev_reward:
-      tf.logging.debug('Tonic: %s', reward)
-    prev_reward = reward
+    with open(self.violations_path) as f2:
+      violations = json.load(f2)
 
-    reward += self.reward_penalize_repeating(action)
-    if reward != prev_reward:
-      tf.logging.debug('Penalize repeating: %s', reward)
-    prev_reward = reward
+    with open(self.marginals_rythm_path) as f3:
+      marginals_rythm = json.load(f3)
 
-    reward += self.reward_penalize_autocorrelation(action)
-    if reward != prev_reward:
-      tf.logging.debug('Penalize autocorr: %s', reward)
-    prev_reward = reward
+    with open(self.violations_rythm_path) as f4:
+      violations_rythm = json.load(f4)
 
-    reward += self.reward_motif(action)
-    if reward != prev_reward:
-      tf.logging.debug('Reward motif: %s', reward)
-    prev_reward = reward
 
-    reward += self.reward_repeated_motif(action)
-    if reward != prev_reward:
-      tf.logging.debug('Reward repeated motif: %s', reward)
-    prev_reward = reward
+    return marginals, violations, marginals_rythm, violations_rythm
 
-    # New rewards based on Gauldin's book, "A Practical Approach to Eighteenth
-    # Century Counterpoint"
-    reward += self.reward_preferred_intervals(action)
-    if reward != prev_reward:
-      tf.logging.debug('Reward preferred_intervals: %s', reward)
-    prev_reward = reward
+  def save_marginals(self):
+    mutex_path = 'mutex.txt'
+    while os.path.isfile(mutex_path):
+      waiting_time = self.waiting_times[self.waiting_index]
+      self.waiting_index = (self.waiting_index + 1) % 100
+      time.sleep(waiting_time)
+      pass
 
-    reward += self.reward_leap_up_back(action)
-    if reward != prev_reward:
-      tf.logging.debug('Reward leap up back: %s', reward)
-    prev_reward = reward
+    with open(mutex_path, 'w') as f:
+      f.write('Hello World')
 
-    reward += self.reward_high_low_unique(action)
-    if reward != prev_reward:
-      tf.logging.debug('Reward high low unique: %s', reward)
+    print("Saving marginals")
+    new_marginals, new_violations, new_marginals_rythm, new_violations_rythm = self.load_marginals()
+    final_marginals = {**self.marginals, **new_marginals}
+    final_violations = {**self.violations, **new_violations}
+    final_marginals_rythm = {**self.marginals_rythm, **new_marginals_rythm}
+    final_violations_rythm = {**self.violations_rythm, **new_violations_rythm}
 
-    return reward
+    with open(self.marginals_path, 'w') as f:
+      json.dump(final_marginals, f)
 
-  def random_reward_shift_to_mean(self, reward):
-    """Modifies reward by a small random values s to pull it towards the mean.
-    If reward is above the mean, s is subtracted; if reward is below the mean,
-    s is added. The random value is in the range 0-0.2. This function is helpful
-    to ensure that the model does not become too certain about playing a
-    particular note.
-    Args:
-      reward: A reward value that has already been computed by another reward
-        function.
-    Returns:
-      Original float reward value modified by scaler.
-    """
-    s = np.random.randint(0, 2) * .1
-    if reward > .5:
-      reward -= s
+    with open(self.violations_path, 'w') as f2:
+      json.dump(final_violations, f2)
+
+    with open(self.marginals_rythm_path, 'w') as f3:
+      json.dump(final_marginals_rythm, f3)
+
+    with open(self.violations_rythm_path, 'w') as f4:
+      json.dump(final_violations_rythm, f4)
+
+    print("The marginals and violations have been saved!")
+    if os.path.isfile(mutex_path):
+      try:
+        os.remove(mutex_path)
+      except:
+        pass
+
+  def get_counterpoint_marginals(self, include_rythm = True):
+    if not include_rythm:
+      notes = [str(note) for note in self.composition]
+      separator = "_"
+      key = separator.join(notes)
+      if self.n_notes < self.num_notes_in_melody:
+        marginals_string = self.marginals[key]
+        marginals_array = list(map(float, marginals_string.split()))
+      else:
+        marginals_array = [0] * (rl_tuner_ops.NUM_CLASSES)
+
+      if notes != []:
+        marginals_array[self.composition[-1]] = 1 / rl_tuner_ops.NUM_CLASSES
+
+      if sum(marginals_array):
+        marginals_array = np.asarray(marginals_array)/sum(marginals_array)
+      return list(marginals_array)
+
+    notes = [str(note) for note in self.composition]
+    separator = "_"
+    key = separator.join(notes)
+    print('Notes', notes)
+
+    if self.n_notes < self.num_notes_in_melody:
+      marginals_string = self.marginals[key]
+      marginals_array = list(map(float, marginals_string.split()))
     else:
-      reward += s
-    return reward
+      marginals_array = [0] * rl_tuner_ops.NUM_CLASSES
 
-  def reward_scale(self, obs, action, scale=None):
-    """Reward function that trains the model to play a scale.
-    Gives rewards for increasing notes, notes within the desired scale, and two
-    consecutive notes from the scale.
-    Args:
-      obs: A one-hot encoding of the observed note.
-      action: A one-hot encoding of the chosen action.
-      scale: The scale the model should learn. Defaults to C Major if not
-        provided.
-    Returns:
-      Float reward value.
-    """
+    if sum(marginals_array):
+      marginals_array = np.asarray(marginals_array) / sum(marginals_array)
 
-    if scale is None:
-      scale = rl_tuner_ops.C_MAJOR_SCALE
+    print('Marginals', marginals_array)
 
-    obs = np.argmax(obs)
-    action = np.argmax(action)
-    reward = 0
-    if action == 1:
-      reward += .1
-    if obs < action < obs + 3:
-      reward += .05
+    marginals_rythm_string = self.marginals_rythm[key]
+    marginals_rythm_array = list(map(float, marginals_rythm_string.split()))
 
-    if action in scale:
-      reward += .01
-      if obs in scale:
-        action_pos = scale.index(action)
-        obs_pos = scale.index(obs)
-        if obs_pos == len(scale) - 1 and action_pos == 0:
-          reward += .8
-        elif action_pos == obs_pos + 1:
-          reward += .8
-
-    return reward
-
-  def reward_key_distribute_prob(self, action, key=None):
-    """Reward function that rewards the model for playing within a given key.
-    Any note within the key is given equal reward, which can cause the model to
-    learn random sounding compositions.
-    Args:
-      action: One-hot encoding of the chosen action.
-      key: The numeric values of notes belonging to this key. Defaults to C
-        Major if not provided.
-    Returns:
-      Float reward value.
-    """
-    if key is None:
-      key = rl_tuner_ops.C_MAJOR_KEY
-
-    reward = 0
-
-    action_note = np.argmax(action)
-    if action_note in key:
-      num_notes_in_key = len(key)
-      extra_prob = 1.0 / num_notes_in_key
-
-      reward = extra_prob
-
-    return reward
-
-  def reward_key(self, action, penalty_amount=-1.0, key=None):
-    """Applies a penalty for playing notes not in a specific key.
-    Args:
-      action: One-hot encoding of the chosen action.
-      penalty_amount: The amount the model will be penalized if it plays
-        a note outside the key.
-      key: The numeric values of notes belonging to this key. Defaults to
-        C-major if not provided.
-    Returns:
-      Float reward value.
-    """
-    if key is None:
-      key = rl_tuner_ops.C_MAJOR_KEY
-
-    reward = 0
-
-    action_note = np.argmax(action)
-    if action_note not in key:
-      reward = penalty_amount
-
-    return reward
-
-  def reward_tonic(self, action, tonic_note=rl_tuner_ops.C_MAJOR_TONIC,
-                   reward_amount=3.0):
-    """Rewards for playing the tonic note at the right times.
-    Rewards for playing the tonic as the first note of the first bar, and the
-    first note of the final bar.
-    Args:
-      action: One-hot encoding of the chosen action.
-      tonic_note: The tonic/1st note of the desired key.
-      reward_amount: The amount the model will be awarded if it plays the
-        tonic note at the right time.
-    Returns:
-      Float reward value.
-    """
-    action_note = np.argmax(action)
-    first_note_of_final_bar = self.num_notes_in_melody - 4
-
-    if self.beat == 0 or self.beat == first_note_of_final_bar:
-      if action_note == tonic_note:
-        return reward_amount
-    elif self.beat == first_note_of_final_bar + 1:
-      if action_note == NO_EVENT:
-        return reward_amount
-    elif self.beat > first_note_of_final_bar + 1:
-      if action_note in (NO_EVENT, NOTE_OFF):
-        return reward_amount
-    return 0.0
-
-  def reward_non_repeating(self, action):
-    """Rewards the model for not playing the same note over and over.
-    Penalizes the model for playing the same note repeatedly, although more
-    repeititions are allowed if it occasionally holds the note or rests in
-    between. Reward is uniform when there is no penalty.
-    Args:
-      action: One-hot encoding of the chosen action.
-    Returns:
-      Float reward value.
-    """
-    penalty = self.reward_penalize_repeating(action)
-    if penalty >= 0:
-      return .1
-
-  def detect_repeating_notes(self, action_note):
-    """Detects whether the note played is repeating previous notes excessively.
-    Args:
-      action_note: An integer representing the note just played.
-    Returns:
-      True if the note just played is excessively repeated, False otherwise.
-    """
-    num_repeated = 0
-    contains_held_notes = False
-    contains_breaks = False
-
-    # Note that the current action yas not yet been added to the composition
-    for i in range(len(self.composition)-1, -1, -1):
-      if self.composition[i] == action_note:
-        num_repeated += 1
-      elif self.composition[i] == NOTE_OFF:
-        contains_breaks = True
-      elif self.composition[i] == NO_EVENT:
-        contains_held_notes = True
+    # compute duration of last note
+    current_duration = 0
+    for i in range(len(notes) - 1, -1, -1):
+      if notes[i] == notes[-1]:
+        current_duration += 1
       else:
         break
 
-    if action_note == NOTE_OFF and num_repeated > 1:
-      return True
-    elif not contains_held_notes and not contains_breaks:
-      if num_repeated > 4:
-        return True
-    elif contains_held_notes or contains_breaks:
-      if num_repeated > 6:
-        return True
-    else:
-      if num_repeated > 8:
-        return True
+    # compute rhythm marginals duration 1 -> marginals[0], duration 2 -> marginals[1], ....
+    stop_note_marginal = marginals_rythm_array[current_duration - 1] if current_duration <= 4 else 0
+    extend_note_marginal = 1 - stop_note_marginal if current_duration <= 4 else 0
+    print('Stop marginals', stop_note_marginal)
+    print('Extend marginals', extend_note_marginal)
 
-    return False
-
-  def reward_penalize_repeating(self,
-                                action,
-                                penalty_amount=-100.0):
-    """Sets the previous reward to 0 if the same is played repeatedly.
-    Allows more repeated notes if there are held notes or rests in between. If
-    no penalty is applied will return the previous reward.
-    Args:
-      action: One-hot encoding of the chosen action.
-      penalty_amount: The amount the model will be penalized if it plays
-        repeating notes.
-    Returns:
-      Previous reward or 'penalty_amount'.
-    """
-    action_note = np.argmax(action)
-    is_repeating = self.detect_repeating_notes(action_note)
-    if is_repeating:
-      return penalty_amount
-    else:
-      return 0.0
-
-  def reward_penalize_autocorrelation(self,
-                                      action,
-                                      penalty_weight=3.0):
-    """Reduces the previous reward if the composition is highly autocorrelated.
-    Penalizes the model for creating a composition that is highly correlated
-    with itself at lags of 1, 2, and 3 beats previous. This is meant to
-    encourage variety in compositions.
-    Args:
-      action: One-hot encoding of the chosen action.
-      penalty_weight: The default weight which will be multiplied by the sum
-        of the autocorrelation coefficients, and subtracted from prev_reward.
-    Returns:
-      Float reward value.
-    """
-    composition = self.composition + [np.argmax(action)]
-    lags = [1, 2, 3]
-    sum_penalty = 0
-    for lag in lags:
-      coeff = rl_tuner_ops.autocorrelate(composition, lag=lag)
-      if not np.isnan(coeff):
-        if np.abs(coeff) > 0.15:
-          sum_penalty += np.abs(coeff) * penalty_weight
-    return -sum_penalty
-
-  def detect_last_motif(self, composition=None, bar_length=8):
-    """Detects if a motif was just played and if so, returns it.
-    A motif should contain at least three distinct notes that are not note_on
-    or note_off, and occur within the course of one bar.
-    Args:
-      composition: The composition in which the function will look for a
-        recent motif. Defaults to the model's composition.
-      bar_length: The number of notes in one bar.
-    Returns:
-      None if there is no motif, otherwise the motif in the same format as the
-      composition.
-    """
-    if composition is None:
-      composition = self.composition
-
-    if len(composition) < bar_length:
-      return None, 0
-
-    last_bar = composition[-bar_length:]
-
-    actual_notes = [a for a in last_bar if a not in (NO_EVENT, NOTE_OFF)]
-    num_unique_notes = len(set(actual_notes))
-    if num_unique_notes >= 3:
-      return last_bar, num_unique_notes
-    else:
-      return None, num_unique_notes
-
-  def reward_motif(self, action, reward_amount=3.0):
-    """Rewards the model for playing any motif.
-    Motif must have at least three distinct notes in the course of one bar.
-    There is a bonus for playing more complex motifs; that is, ones that involve
-    a greater number of notes.
-    Args:
-      action: One-hot encoding of the chosen action.
-      reward_amount: The amount that will be returned if the last note belongs
-        to a motif.
-    Returns:
-      Float reward value.
-    """
-
-    composition = self.composition + [np.argmax(action)]
-    motif, num_notes_in_motif = self.detect_last_motif(composition=composition)
-    if motif is not None:
-      motif_complexity_bonus = max((num_notes_in_motif - 3)*.3, 0)
-      return reward_amount + motif_complexity_bonus
-    else:
-      return 0.0
-
-  def detect_repeated_motif(self, action, bar_length=8):
-    """Detects whether the last motif played repeats an earlier motif played.
-    Args:
-      action: One-hot encoding of the chosen action.
-      bar_length: The number of beats in one bar. This determines how many beats
-        the model has in which to play the motif.
-    Returns:
-      True if the note just played belongs to a motif that is repeated. False
-      otherwise.
-    """
-    composition = self.composition + [np.argmax(action)]
-    if len(composition) < bar_length:
-      return False, None
-
-    motif, _ = self.detect_last_motif(
-        composition=composition, bar_length=bar_length)
-    if motif is None:
-      return False, None
-
-    prev_composition = self.composition[:-(bar_length-1)]
-
-    # Check if the motif is in the previous composition.
-    for i in range(len(prev_composition) - len(motif) + 1):
-      for j in range(len(motif)):
-        if prev_composition[i + j] != motif[j]:
-          break
+    marginals_combine = []
+    # combine both marginals
+    for i in range(len(marginals_array)):
+      # If the note is extended
+      if notes != [] and str(i) == notes[-1]:
+        marginals_combine.append(extend_note_marginal)
       else:
-        return True, motif
-    return False, None
+        marginals_combine.append(stop_note_marginal)
 
-  def reward_repeated_motif(self,
-                            action,
-                            bar_length=8,
-                            reward_amount=4.0):
-    """Adds a big bonus to previous reward if the model plays a repeated motif.
-    Checks if the model has just played a motif that repeats an ealier motif in
-    the composition.
-    There is also a bonus for repeating more complex motifs.
-    Args:
-      action: One-hot encoding of the chosen action.
-      bar_length: The number of notes in one bar.
-      reward_amount: The amount that will be added to the reward if the last
-        note belongs to a repeated motif.
-    Returns:
-      Float reward value.
-    """
-    is_repeated, motif = self.detect_repeated_motif(action, bar_length)
-    if is_repeated:
-      actual_notes = [a for a in motif if a not in (NO_EVENT, NOTE_OFF)]
-      num_notes_in_motif = len(set(actual_notes))
-      motif_complexity_bonus = max(num_notes_in_motif - 3, 0)
-      return reward_amount + motif_complexity_bonus
+    if sum(marginals_combine):
+      marginals_combine = np.asarray(marginals_combine)/sum(marginals_combine)
+
+    print('Marginals rythm', marginals_combine)
+    sys.stdout.flush()
+
+    for i in range(len(marginals_array)):
+      if notes == [] or str(i) != notes[-1]:
+        marginals_combine[i] += marginals_array[i]
+        marginals_combine[i] /= 2
+
+    print('Marginals_combine', marginals_combine)
+    sys.stdout.flush()
+    #if sum(marginals_combine):
+    #  marginals_combine = np.asarray(marginals_combine)/sum(marginals_combine)
+
+    return list(marginals_combine)
+
+
+  def get_counterpoint_marginals_test(self, include_rythm = True):
+    notes = [str(note) for note in self.composition]
+    separator = "_"
+    key = separator.join(notes)
+
+    if self.n_notes < self.num_notes_in_melody:
+      marginals_string = self.marginals[key]
+      marginals_array = list(map(float, marginals_string.split()))
     else:
-      return 0.0
+      marginals_array = [0] * (rl_tuner_ops.NUM_CLASSES - 1)
+    if not include_rythm:
+      if notes != []:
+        marginals_array[self.composition[-1]] = 1/(rl_tuner_ops.NUM_CLASSES - 1)
+      return marginals_array
 
-  def detect_sequential_interval(self, action, key=None):
-    """Finds the melodic interval between the action and the last note played.
-    Uses constants to represent special intervals like rests.
-    Args:
-      action: One-hot encoding of the chosen action
-      key: The numeric values of notes belonging to this key. Defaults to
-        C-major if not provided.
-    Returns:
-      An integer value representing the interval, or a constant value for
-      special intervals.
-    """
-    if not self.composition:
-      return 0, None, None
-
-    prev_note = self.composition[-1]
-    action_note = np.argmax(action)
-
-    c_major = False
-    if key is None:
-      key = rl_tuner_ops.C_MAJOR_KEY
-      c_notes = [2, 14, 26]
-      g_notes = [9, 21, 33]
-      e_notes = [6, 18, 30]
-      c_major = True
-      tonic_notes = [2, 14, 26]
-      fifth_notes = [9, 21, 33]
-
-    # get rid of non-notes in prev_note
-    prev_note_index = len(self.composition) - 1
-    while prev_note in (NO_EVENT, NOTE_OFF) and prev_note_index >= 0:
-      prev_note = self.composition[prev_note_index]
-      prev_note_index -= 1
-    if prev_note in (NOTE_OFF, NO_EVENT):
-      tf.logging.debug('Action_note: %s, prev_note: %s', action_note, prev_note)
-      return 0, action_note, prev_note
-
-    tf.logging.debug('Action_note: %s, prev_note: %s', action_note, prev_note)
-
-    # get rid of non-notes in action_note
-    if action_note == NO_EVENT:
-      if prev_note in tonic_notes or prev_note in fifth_notes:
-        return (rl_tuner_ops.HOLD_INTERVAL_AFTER_THIRD_OR_FIFTH,
-                action_note, prev_note)
+    marginals_rythm_string = self.marginals_rythm[key]
+    marginals_rythm_array = list(map(float, marginals_rythm_string.split())) # marginals[0]: 1, marginals[1]: 2, ...
+    marginals_combine = []
+    current_duration = 0
+    for i in range(len(notes) - 1, -1, -1):
+      if notes[i] == notes[-1]:
+        current_duration += 1
       else:
-        return rl_tuner_ops.HOLD_INTERVAL, action_note, prev_note
-    elif action_note == NOTE_OFF:
-      if prev_note in tonic_notes or prev_note in fifth_notes:
-        return (rl_tuner_ops.REST_INTERVAL_AFTER_THIRD_OR_FIFTH,
-                action_note, prev_note)
-      else:
-        return rl_tuner_ops.REST_INTERVAL, action_note, prev_note
+        break
 
-    interval = abs(action_note - prev_note)
+    stop_note_marginal = marginals_rythm_array[current_duration - 1] if current_duration <= 4 else 0
+    extend_note_marginal = 1 - stop_note_marginal if current_duration <= 4 else 0
 
-    if c_major and interval == rl_tuner_ops.FIFTH and (
-        prev_note in c_notes or prev_note in g_notes):
-      return rl_tuner_ops.IN_KEY_FIFTH, action_note, prev_note
-    if c_major and interval == rl_tuner_ops.THIRD and (
-        prev_note in c_notes or prev_note in e_notes):
-      return rl_tuner_ops.IN_KEY_THIRD, action_note, prev_note
-
-    return interval, action_note, prev_note
-
-  def reward_preferred_intervals(self, action, scaler=5.0, key=None):
-    """Dispenses reward based on the melodic interval just played.
-    Args:
-      action: One-hot encoding of the chosen action.
-      scaler: This value will be multiplied by all rewards in this function.
-      key: The numeric values of notes belonging to this key. Defaults to
-        C-major if not provided.
-    Returns:
-      Float reward value.
-    """
-    interval, _, _ = self.detect_sequential_interval(action, key)
-    tf.logging.debug('Interval:', interval)
-
-    if interval == 0:  # either no interval or involving uninteresting rests
-      tf.logging.debug('No interval or uninteresting.')
-      return 0.0
-
-    reward = 0.0
-
-    # rests can be good
-    if interval == rl_tuner_ops.REST_INTERVAL:
-      reward = 0.05
-      tf.logging.debug('Rest interval.')
-    if interval == rl_tuner_ops.HOLD_INTERVAL:
-      reward = 0.075
-    if interval == rl_tuner_ops.REST_INTERVAL_AFTER_THIRD_OR_FIFTH:
-      reward = 0.15
-      tf.logging.debug('Rest interval after 1st or 5th.')
-    if interval == rl_tuner_ops.HOLD_INTERVAL_AFTER_THIRD_OR_FIFTH:
-      reward = 0.3
-
-    # large leaps and awkward intervals bad
-    if interval == rl_tuner_ops.SEVENTH:
-      reward = -0.3
-      tf.logging.debug('7th')
-    if interval > rl_tuner_ops.OCTAVE:
-      reward = -1.0
-      tf.logging.debug('More than octave.')
-
-    # common major intervals are good
-    if interval == rl_tuner_ops.IN_KEY_FIFTH:
-      reward = 0.1
-      tf.logging.debug('In key 5th')
-    if interval == rl_tuner_ops.IN_KEY_THIRD:
-      reward = 0.15
-      tf.logging.debug('In key 3rd')
-
-    # smaller steps are generally preferred
-    if interval == rl_tuner_ops.THIRD:
-      reward = 0.09
-      tf.logging.debug('3rd')
-    if interval == rl_tuner_ops.SECOND:
-      reward = 0.08
-      tf.logging.debug('2nd')
-    if interval == rl_tuner_ops.FOURTH:
-      reward = 0.07
-      tf.logging.debug('4th')
-
-    # larger leaps not as good, especially if not in key
-    if interval == rl_tuner_ops.SIXTH:
-      reward = 0.05
-      tf.logging.debug('6th')
-    if interval == rl_tuner_ops.FIFTH:
-      reward = 0.02
-      tf.logging.debug('5th')
-
-    tf.logging.debug('Interval reward', reward * scaler)
-    return reward * scaler
-
-  def detect_high_unique(self, composition):
-    """Checks a composition to see if the highest note within it is repeated.
-    Args:
-      composition: A list of integers representing the notes in the piece.
-    Returns:
-      True if the lowest note was unique, False otherwise.
-    """
-    max_note = max(composition)
-    return list(composition).count(max_note) == 1
-
-  def detect_low_unique(self, composition):
-    """Checks a composition to see if the lowest note within it is repeated.
-    Args:
-      composition: A list of integers representing the notes in the piece.
-    Returns:
-      True if the lowest note was unique, False otherwise.
-    """
-    no_special_events = [x for x in composition
-                         if x not in (NO_EVENT, NOTE_OFF)]
-    if no_special_events:
-      min_note = min(no_special_events)
-      if list(composition).count(min_note) == 1:
-        return True
-    return False
-
-  def reward_high_low_unique(self, action, reward_amount=3.0):
-    """Evaluates if highest and lowest notes in composition occurred once.
-    Args:
-      action: One-hot encoding of the chosen action.
-      reward_amount: Amount of reward that will be given for the highest note
-        being unique, and again for the lowest note being unique.
-    Returns:
-      Float reward value.
-    """
-    if len(self.composition) + 1 != self.num_notes_in_melody:
-      return 0.0
-
-    composition = np.array(self.composition)
-    composition = np.append(composition, np.argmax(action))
-
-    reward = 0.0
-
-    if self.detect_high_unique(composition):
-      reward += reward_amount
-
-    if self.detect_low_unique(composition):
-      reward += reward_amount
-
-    return reward
-
-  def detect_leap_up_back(self, action, steps_between_leaps=6):
-    """Detects when the composition takes a musical leap, and if it is resolved.
-    When the composition jumps up or down by an interval of a fifth or more,
-    it is a 'leap'. The model then remembers that is has a 'leap direction'. The
-    function detects if it then takes another leap in the same direction, if it
-    leaps back, or if it gradually resolves the leap.
-    Args:
-      action: One-hot encoding of the chosen action.
-      steps_between_leaps: Leaping back immediately does not constitute a
-        satisfactory resolution of a leap. Therefore the composition must wait
-        'steps_between_leaps' beats before leaping back.
-    Returns:
-      0 if there is no leap, 'LEAP_RESOLVED' if an existing leap has been
-      resolved, 'LEAP_DOUBLED' if 2 leaps in the same direction were made.
-    """
-    if not self.composition:
-      return 0
-
-    outcome = 0
-
-    interval, action_note, prev_note = self.detect_sequential_interval(action)
-
-    if action_note in (NOTE_OFF, NO_EVENT):
-      self.steps_since_last_leap += 1
-      tf.logging.debug('Rest, adding to steps since last leap. It is'
-                       'now: %s', self.steps_since_last_leap)
-      return 0
-
-    # detect if leap
-    if interval >= rl_tuner_ops.FIFTH or interval == rl_tuner_ops.IN_KEY_FIFTH:
-      if action_note > prev_note:
-        leap_direction = rl_tuner_ops.ASCENDING
-        tf.logging.debug('Detected an ascending leap')
-      else:
-        leap_direction = rl_tuner_ops.DESCENDING
-        tf.logging.debug('Detected a descending leap')
-
-      # there was already an unresolved leap
-      if self.composition_direction != 0:
-        if self.composition_direction != leap_direction:
-          tf.logging.debug('Detected a resolved leap')
-          tf.logging.debug('Num steps since last leap: %s',
-                           self.steps_since_last_leap)
-          if self.steps_since_last_leap > steps_between_leaps:
-            outcome = rl_tuner_ops.LEAP_RESOLVED
-            tf.logging.debug('Sufficient steps before leap resolved, '
-                             'awarding bonus')
-          self.composition_direction = 0
-          self.leapt_from = None
-        else:
-          tf.logging.debug('Detected a double leap')
-          outcome = rl_tuner_ops.LEAP_DOUBLED
-
-      # the composition had no previous leaps
-      else:
-        tf.logging.debug('There was no previous leap direction')
-        self.composition_direction = leap_direction
-        self.leapt_from = prev_note
-
-      self.steps_since_last_leap = 0
-
-    # there is no leap
+    if notes != [] and 0 == notes[-1]:
+      marginals_combine.append(extend_note_marginal)
     else:
-      self.steps_since_last_leap += 1
-      tf.logging.debug('No leap, adding to steps since last leap. '
-                       'It is now: %s', self.steps_since_last_leap)
+      marginals_combine.append(stop_note_marginal)
 
-      # If there was a leap before, check if composition has gradually returned
-      # This could be changed by requiring you to only go a 5th back in the
-      # opposite direction of the leap.
-      if (self.composition_direction == rl_tuner_ops.ASCENDING and
-          action_note <= self.leapt_from) or (
-              self.composition_direction == rl_tuner_ops.DESCENDING and
-              action_note >= self.leapt_from):
-        tf.logging.debug('detected a gradually resolved leap')
-        outcome = rl_tuner_ops.LEAP_RESOLVED
-        self.composition_direction = 0
-        self.leapt_from = None
+    for i in range(len(marginals_array)):
+      # If the note is extended
+      if notes != [] and i + 1 == notes[-1]:
+        marginals_combine.append(extend_note_marginal)
+      else:
+        marginals_combine.append(stop_note_marginal * marginals_array[i])
 
-    return outcome
 
-  def reward_leap_up_back(self, action, resolving_leap_bonus=5.0,
-                          leaping_twice_punishment=-5.0):
-    """Applies punishment and reward based on the principle leap up leap back.
-    Large interval jumps (more than a fifth) should be followed by moving back
-    in the same direction.
-    Args:
-      action: One-hot encoding of the chosen action.
-      resolving_leap_bonus: Amount of reward dispensed for resolving a previous
-        leap.
-      leaping_twice_punishment: Amount of reward received for leaping twice in
-        the same direction.
-    Returns:
-      Float reward value.
-    """
+    if sum(marginals_combine):
+      marginals_combine = np.asarray(marginals_combine)/sum(marginals_combine)
+    return list(marginals_combine)
 
-    leap_outcome = self.detect_leap_up_back(action)
-    if leap_outcome == rl_tuner_ops.LEAP_RESOLVED:
-      tf.logging.debug('Leap resolved, awarding %s', resolving_leap_bonus)
-      return resolving_leap_bonus
-    elif leap_outcome == rl_tuner_ops.LEAP_DOUBLED:
-      tf.logging.debug('Leap doubled, awarding %s', leaping_twice_punishment)
-      return leaping_twice_punishment
-    else:
-      return 0.0
+  def get_counterpoint_violations(self, chosen_note, include_rythm = True):
+    notes = [str(note) for note in self.composition]
 
-  def reward_interval_diversity(self):
-    # TODO(natashajaques): music theory book also suggests having a mix of steps
-    # that are both incremental and larger. Want to write a function that
-    # rewards this. Could have some kind of interval_stats stored by
-    # reward_preferred_intervals function.
-    pass
+    notes.append(str(chosen_note))
+    violations, self.violations = self.return_cp_call(self.violations, self.cp_violations_path, notes = notes)
+
+    if self.composition != [] and chosen_note == self.composition[-1]:
+      violations = [0] * 12
+
+    if not include_rythm:
+      return violations
+
+    violations_rythm, self.violations_rythm = self.return_cp_call(self.violations_rythm, self.cp_violations_rythm_path, notes = notes)
+
+    violations.extend(violations_rythm)
+
+    return violations
+
+  def get_counterpoint_rltuner(self, chosen_note, include_rythm = True):
+    notes = [str(note) for note in self.composition]
+
+    notes.append(str(chosen_note))
+    violations, _= self.return_cp_call({}, self.cp_rltuner_path, notes = notes)
+
+    if self.composition != [] and chosen_note == self.composition[-1]:
+      violations = [0] * 12
+
+    print('melodic', violations)
+    sys.stdout.flush()
+    if not include_rythm:
+      return violations
+
+    violations_rythm, _ = self.return_cp_call({}, self.cp_rltuner_rythm_path, notes = notes)
+    print('rythm', violations_rythm)
+    sys.stdout.flush()
+
+    violations.extend(violations_rythm)
+    return violations
+
+  def return_cp_call(self, dict, path, notes = None):
+    if not notes:
+      notes = self.composition
+    notes = [str(note) for note in notes]
+
+    separator = "_"
+    key = separator.join(notes)
+
+    if key in dict:
+      output_string = dict[key]
+      return list(map(float, output_string.split())), dict
+
+    jar_array = ['java', '-jar', path]
+    jar_array.extend(notes)
+    p = Popen(jar_array, stdout=PIPE, stderr=STDOUT)
+    jar_output = p.stdout.read()
+    p.stdout.close()
+    try:
+      output = jar_output.decode('utf-8')
+      dict[key] = output
+      output_list = list(map(float, output.split()))
+    except:
+      print(jar_output)
+      print(jar_array)
+      raise ("Conversion error")
+    return output_list, dict
 
   def generate_music_sequence(self, save_to_file=True, name='rltuner_sample', visualize_probs=False,
                               prob_image_name=None, length=None, most_probable=False):
@@ -1689,7 +1335,7 @@ class RLTuner(object):
       length = self.num_notes_in_melody
 
     self.reset_composition()
-    next_obs = self.prime_internal_models()
+    next_obs = self.prime_internal_models()  # Testing the model
     tf.logging.info('Priming with note %s', np.argmax(next_obs))
 
     lengths = np.full(self.q_network.batch_size, 1, dtype=int)
@@ -1697,37 +1343,40 @@ class RLTuner(object):
     if visualize_probs:
       prob_image = np.zeros((self.input_size, length))
 
-    generated_seq = [0] * length
-    for i in range(length):
+    generated_seq = []
+    while self.n_notes <= length and len(generated_seq) < length * 4:
       input_batch = np.reshape(next_obs, (self.q_network.batch_size, 1,
                                           self.num_actions))
+
       if self.algorithm == 'g':
         (softmax, self.q_network.state_value,
          self.reward_rnn.state_value) = self.session.run(
-             [self.action_softmax, self.q_network.state_tensor,
-              self.reward_rnn.state_tensor],
-             {self.q_network.melody_sequence: input_batch,
-              self.q_network.initial_state: self.q_network.state_value,
-              self.q_network.lengths: lengths,
-              self.reward_rnn.melody_sequence: input_batch,
-              self.reward_rnn.initial_state: self.reward_rnn.state_value,
-              self.reward_rnn.lengths: lengths})
+          [self.action_softmax, self.q_network.state_tensor,
+           self.reward_rnn.state_tensor],
+          {self.q_network.melody_sequence: input_batch,
+           self.q_network.initial_state: self.q_network.state_value,
+           self.q_network.lengths: lengths,
+           self.reward_rnn.melody_sequence: input_batch,
+           self.reward_rnn.initial_state: self.reward_rnn.state_value,
+           self.reward_rnn.lengths: lengths})
       else:
         softmax, self.q_network.state_value = self.session.run(
-            [self.action_softmax, self.q_network.state_tensor],
-            {self.q_network.melody_sequence: input_batch,
-             self.q_network.initial_state: self.q_network.state_value,
-             self.q_network.lengths: lengths})
+          [self.action_softmax, self.q_network.state_tensor],
+          {self.q_network.melody_sequence: input_batch,
+           self.q_network.initial_state: self.q_network.state_value,
+           self.q_network.lengths: lengths})
       softmax = np.reshape(softmax, (self.num_actions))
-
-      if visualize_probs:
-        prob_image[:, i] = softmax  # np.log(1.0 + softmax)
 
       if most_probable:
         sample = np.argmax(softmax)
       else:
         sample = rl_tuner_ops.sample_softmax(softmax)
-      generated_seq[i] = sample
+
+      if generated_seq == [] or generated_seq[-1] != sample:
+        self.n_notes += 1
+
+      if self.n_notes <= length and len(generated_seq) < length * 4:
+        generated_seq.append(sample)
       next_obs = np.array(rl_tuner_ops.make_onehot([sample],
                                                    self.num_actions)).flatten()
 
@@ -1762,7 +1411,7 @@ class RLTuner(object):
     return sequence
 
   def evaluate_music_theory_metrics(self, num_compositions=10000, key=None,
-                                    tonic_note=rl_tuner_ops.C_MAJOR_TONIC):
+                                    tonic_note=rl_tuner_ops.C_MAJOR_TONIC, cp_constraints=False, all_constraints=False):
     """Computes statistics about music theory rule adherence.
     Args:
       num_compositions: How many compositions should be randomly generated
@@ -1773,12 +1422,7 @@ class RLTuner(object):
     Returns:
       A dictionary containing the statistics.
     """
-    stat_dict = rl_tuner_eval_metrics.compute_composition_stats(
-        self,
-        num_compositions=num_compositions,
-        composition_length=self.num_notes_in_melody,
-        key=key,
-        tonic_note=tonic_note)
+    stat_dict = rl_tuner_eval_metrics.compute_composition_stats(self, num_compositions, self.num_notes_in_melody)
 
     return stat_dict
 
@@ -1794,7 +1438,7 @@ class RLTuner(object):
 
     save_loc = os.path.join(directory, name)
     self.saver.save(self.session, save_loc,
-                    global_step=len(self.rewards_batched)*self.output_every_nth)
+                    global_step=len(self.rewards_batched) * self.output_every_nth)
 
     self.save_stored_rewards(name)
 
@@ -1919,15 +1563,15 @@ class RLTuner(object):
     else:
       plt.show()
 
-  def prime_internal_models(self):
+  def prime_internal_models(self, restrict_domain=False):
     """Primes both internal models based on self.priming_mode.
     Returns:
       A one-hot encoding of the note output by the q_network to be used as
       the initial observation.
     """
-    self.prime_internal_model(self.target_q_network)
-    self.prime_internal_model(self.reward_rnn)
-    next_obs = self.prime_internal_model(self.q_network)
+    self.prime_internal_model(self.target_q_network, restrict_domain=restrict_domain)
+    self.prime_internal_model(self.reward_rnn, restrict_domain=restrict_domain)
+    next_obs = self.prime_internal_model(self.q_network, restrict_domain=restrict_domain)
     return next_obs
 
   def restore_from_directory(self, directory=None, checkpoint_name=None,

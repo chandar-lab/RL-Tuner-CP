@@ -13,7 +13,7 @@ import static minicpbp.cp.Factory.*;
 
 public class CounterpointViolation {
     private static Solver cp;
-    private static int n = 32;
+    private static int n = 14;
     private static int noteMax = 28;
     private static int tonic = 5;
     private static int dominant = 12;
@@ -41,9 +41,18 @@ public class CounterpointViolation {
             System.out.println();
         }
 
-        ArrayList<Integer> previousNotes = (ArrayList<Integer>) Arrays.stream(args)
+        ArrayList<Integer> previousNotesSixteenth = (ArrayList<Integer>) Arrays.stream(args)
                 .map(Integer::parseInt)
                 .collect(Collectors.toList());
+
+        int note = -1;
+        ArrayList<Integer> previousNotes= new ArrayList<>();
+        for(int i = 0; i < previousNotesSixteenth.size(); i++) {
+            if (previousNotesSixteenth.get(i) != note) {
+                previousNotes.add(previousNotesSixteenth.get(i));
+                note = previousNotesSixteenth.get(i);
+            }
+        }
 
         int presentNote = previousNotes.get(previousNotes.size() - 1);
         previousNotes.remove(previousNotes.size() - 1);
@@ -439,6 +448,7 @@ public class CounterpointViolation {
         IntVar[] pitchOccurrences = makeIntVarArray(cp, pitchesToRestrict.length, 0, n);
         IntVar[] pitchesFuture = makeIntVarArray(previousNotes.size() > 0 ? pitches.length - 1 : pitches.length, i -> previousNotes.size() > 0 ? pitches[i + 1] : pitches[i]);
         cp.post(cardinality(pitchesFuture, pitchesToRestrict, pitchOccurrences));
+        cp.post(lessOrEqual(sum(pitchOccurrences), makeIntVar(cp, pitchesFuture.length, pitchesFuture.length)));
 
         HashMap<Integer, Integer> pastOccurrences = new HashMap<>();
         for (int pitch : pitchesToRestrict)
@@ -463,7 +473,15 @@ public class CounterpointViolation {
                 violations[i] = pitchOccurrences[i];
             }
         }
-        return sum(violations);
+        int nMissingValues = 0;
+        for (Integer pastOccurrenceKey: pastOccurrences.keySet()) {
+            if (pastOccurrenceKey >= 5 && pastOccurrenceKey <= 19 && pastOccurrences.get(pastOccurrenceKey) == 0)
+                nMissingValues++;
+        }
+        int lowerBound = Math.max(nMissingValues - pitchesFuture.length, 0);
+        IntVar violationsSum = sum(violations);
+        cp.post(largerOrEqual(violationsSum, makeIntVar(cp, lowerBound, lowerBound)));
+        return violationsSum;
     }
 
     /**
@@ -710,7 +728,6 @@ public class CounterpointViolation {
      */
     private static void solve() {
         cp.fixPoint();
-        cp.beliefPropa();
     }
 
     /**

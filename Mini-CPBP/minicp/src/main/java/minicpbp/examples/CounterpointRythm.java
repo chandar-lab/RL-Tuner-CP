@@ -16,6 +16,8 @@ public class CounterpointRythm {
     private static int n = 14;
     private static boolean useRandomSequence = false;
     private static int maxDuration = 16;
+    // Rythms allowed: sixteenth-note, eight-note, quarter-note, half-note, full-note
+    private static int[] rythmDomain = {1, 2, 4, 8, 16};
 
     public static void main(String[] args) {
         ArrayList<Integer> previousDurations = new ArrayList<>();
@@ -59,8 +61,9 @@ public class CounterpointRythm {
         double[] marginals = new double[maxDuration];
 
         cp = makeSolver();
-
-        IntVar[] durationsFuture = makeIntVarArray(cp,n - previousDurations.size(), 1, maxDuration);
+        ArrayList<Integer> finalPreviousDurations = previousDurations;
+        IntVar[] durationsFuture = makeIntVarArray(n - previousDurations.size(),
+                (i) -> makeIntVar(cp, Arrays.stream(rythmDomain).boxed().collect(Collectors.toSet())));
 
         try {
             // Rythm constraints
@@ -108,7 +111,7 @@ public class CounterpointRythm {
 
         boolean[] longNotes = new boolean[]{
                 false, false, true, false, false, true, false, false, true, false, false, true, false, false};
-        for (int i = 0; i < durationsFuture.length - 1; i++) {
+        for (int i = 0; i < durationsFuture.length; i++) {
             boolean isLongI = longNotes[previousDurations.size() + i];
 
             if(isLongI) {
@@ -117,13 +120,15 @@ public class CounterpointRythm {
                 cp.post(less(durationsFuture[i], makeIntVar(cp, minOfLongNotes, minOfLongNotes)));
             }
 
-            for (int j = i + 1; j < durationsFuture.length; j++) {
-                boolean isLongJ = longNotes[previousDurations.size() + j];
-                if(isLongI && !isLongJ) {
-                    cp.post(larger(durationsFuture[i], durationsFuture[j]));
-                }
-                if(!isLongI && isLongJ) {
-                    cp.post(larger(durationsFuture[j], durationsFuture[i]));
+            if (i != durationsFuture.length - 1) {
+                for (int j = i + 1; j < durationsFuture.length; j++) {
+                    boolean isLongJ = longNotes[previousDurations.size() + j];
+                    if (isLongI && !isLongJ) {
+                        cp.post(larger(durationsFuture[i], durationsFuture[j]));
+                    }
+                    if (!isLongI && isLongJ) {
+                        cp.post(larger(durationsFuture[j], durationsFuture[i]));
+                    }
                 }
             }
         }
